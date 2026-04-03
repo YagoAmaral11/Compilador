@@ -17,6 +17,7 @@ string gentempcode();
 
 extern FILE* yyin;
 
+// TODO: Criar estruturas melhores para identificar os Tokens
 struct atributos
 {
 	string label;
@@ -31,6 +32,7 @@ struct atributos
 
 %left '+' '-'
 %left '*' '/'
+%left '(' ')'
 
 %%
 
@@ -51,7 +53,12 @@ S: E
 ;
 
 E: 
-	E '+' E
+	'(' E ')'
+	{
+		$$.label = $2.label;
+		$$.traducao = $2.traducao;
+	}
+	| E '+' E
 	{
 		$$.label = gentempcode();
 		$$.traducao = $1.traducao + $3.traducao + "\t" + $$.label +
@@ -88,12 +95,14 @@ E:
 
 int yyparse();
 
+// TODO: Trocar essa função por um controlador
 string gentempcode()
 {
 	var_temp_qnt++; // Usado para contar quantas variáveis temporárias serão usadas no programa
 	return "t" + to_string(var_temp_qnt); // retorna um identificador para essa variável temporária
 }
 
+// TODO: Melhorar essa detecção de erro
 void yyerror(string MSG)
 {
 	cerr << "Erro na linha " << linha << ": " << MSG << endl;
