@@ -1,0 +1,31 @@
+CXXFLAGS = -Wno-free-nonheap-object
+
+SCANNER = flex
+SCANNER_FILE = lexico.l
+SCANNER_OUTPUT = testeLex
+
+PARSER = bison
+PARSER_FILE = sintatico.y
+PARSER_OUTPUT = testeYacc
+
+OUTPUT_DIR = build
+OUTPUT_FILE = compilador
+
+all: build
+
+compile: build
+
+clean: 
+	powershell -Command "if (Test-Path compilador.exe) { rm compilador.exe }"
+	powershell -Command "if (Test-Path lex.yy.c) { rm lex.yy.c }"
+	powershell -Command "if (Test-Path y.tab.c) { rm y.tab.c }"
+	powershell -Command "if (Test-Path y.tab.h) { rm y.tab.h }"
+
+build: buildLex buildYacc
+	g++ $(CXXFLAGS) y.tab.c -o $(OUTPUT_FILE)
+
+buildLex:
+	$(SCANNER) $(SCANNER_FILE) 	
+
+buildYacc:
+	$(PARSER) -d --yacc $(PARSER_FILE) 	

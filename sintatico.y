@@ -11,15 +11,18 @@ int var_temp_qnt;
 int linha = 1;
 string codigo_gerado;
 
+int yylex(void);
+void yyerror(string);
+string gentempcode();
+
+extern FILE* yyin;
+
+// TODO: Criar estruturas melhores para identificar os Tokens
 struct atributos
 {
 	string label;
 	string traducao;
 };
-
-int yylex(void);
-void yyerror(string);
-string gentempcode();
 
 %}
 
@@ -27,26 +30,35 @@ string gentempcode();
 
 %start S
 
-%left '*' '/'
 %left '+' '-'
+%left '*' '/'
+%left '(' ')'
 
 %%
 
 S: E
 	{
-		codigo_gerado = "/*Compilador FOCA*/\n"
-						"#include <stdio.h>\n"
-						"int main(void) {\n";
+		codigo_gerado = "#include <stdio.h>\n"
+						"int main(void) {\n";						
+
+		for (int i = 1; i <= var_temp_qnt; i++)
+		{
+			codigo_gerado += "\tint t" + to_string(i) + ";\n";
+		}
 
 		codigo_gerado += $1.traducao;
 
-		codigo_gerado += "\treturn 0;"
-					"\n}\n";
+		codigo_gerado += "\treturn 0;" "\n}\n";
 	}
 ;
 
 E: 
-	E '+' E
+	'(' E ')'
+	{
+		$$.label = $2.label;
+		$$.traducao = $2.traducao;
+	}
+	| E '+' E
 	{
 		$$.label = gentempcode();
 		$$.traducao = $1.traducao + $3.traducao + "\t" + $$.label +
@@ -83,23 +95,41 @@ E:
 
 int yyparse();
 
+// TODO: Trocar essa função por um controlador
 string gentempcode()
 {
-	var_temp_qnt++;
-	return "t" + to_string(var_temp_qnt);
+	var_temp_qnt++; // Usado para contar quantas variáveis temporárias serão usadas no programa
+	return "t" + to_string(var_temp_qnt); // retorna um identificador para essa variável temporária
+}
+
+// TODO: Melhorar essa detecção de erro
+void yyerror(string MSG)
+{
+	cerr << "Erro na linha " << linha << ": " << MSG << endl;
 }
 
 int main(int argc, char* argv[])
 {
+	// programa de entrada
+	if (argc > 1)
+	{
+		yyin = fopen(argv[1], "r");
+
+		if (!yyin)
+		{
+			perror("fopen");
+			return 1;
+		}
+	}
+	else
+	{
+		yyin = stdin;
+	}
+
 	var_temp_qnt = 0;
 
 	if (yyparse() == 0)
 		cout << codigo_gerado;
 
 	return 0;
-}
-
-void yyerror(string MSG)
-{
-	cerr << "Erro na linha " << linha << ": " << MSG << endl;
 }

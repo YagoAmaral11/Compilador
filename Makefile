@@ -1,65 +1,31 @@
-SCANNER := flex
-SCANNER_PARAMS := lexico.l
-PARSER := bison
-PARSER_PARAMS := -d --yacc sintatico.y
-CXXFLAGS := -Wno-free-nonheap-object
-FILE := exemplos/01_soma.foca
+CXXFLAGS = -Wno-free-nonheap-object
 
-all: glf translate
+SCANNER = flex
+SCANNER_FILE = lexico.l
+SCANNER_OUTPUT = testeLex
 
-compile: glf
+PARSER = bison
+PARSER_FILE = sintatico.y
+PARSER_OUTPUT = testeYacc
 
-glf: y.tab.c lex.yy.c
-		g++ $(CXXFLAGS) -o glf y.tab.c
+OUTPUT_DIR = build
+OUTPUT_FILE = compilador
 
-lex.yy.c: lexico.l
-		$(SCANNER) $(SCANNER_PARAMS)
+all: build
 
-y.tab.c y.tab.h: sintatico.y
-		$(PARSER) $(PARSER_PARAMS)
+compile: build
 
-translate: glf
-		./glf < $(FILE)
+clean: 
+	rm -r $(OUTPUT_DIR)
 
-run: glf
-		./glf < $(FILE) > /tmp/foca_output.c && gcc /tmp/foca_output.c -o /tmp/foca_output && /tmp/foca_output
+build: buildLex buildYacc
+	cd $(OUTPUT_DIR) && g++ $(CXXFLAGS) $(PARSER_OUTPUT).c -o $(OUTPUT_FILE)
 
-test: glf
-	@pass=0; fail=0; \
-	for f in exemplos/*.foca; do \
-		name=$$(basename $$f .foca); \
-		expected="exemplos/$$name.expected"; \
-		if [ -f "$$expected" ]; then \
-			if ./glf < $$f 2>/dev/null | diff -q - $$expected > /dev/null 2>&1; then \
-				echo "  PASS: $$name"; \
-				pass=$$((pass + 1)); \
-			else \
-				echo "  FAIL: $$name"; \
-				fail=$$((fail + 1)); \
-			fi; \
-		fi; \
-	done; \
-	echo ""; \
-	echo "Resultado: $$pass passou, $$fail falhou"
+buildLex:
+	$(SCANNER) $(SCANNER_FILE) 
+	mv lex.yy.c $(OUTPUT_DIR)/$(SCANNER_OUTPUT).c
 
-test-%: glf
-	@name=$(patsubst test-%,%,$@); \
-	foca=$$(ls exemplos/$${name}_*.foca 2>/dev/null | head -1); \
-	if [ -z "$$foca" ]; then \
-		echo "Exemplo nao encontrado para etapa $$name"; \
-		exit 1; \
-	fi; \
-	expected=$$(echo $$foca | sed 's/.foca/.expected/'); \
-	echo "Entrada: $$foca"; \
-	echo "---"; \
-	./glf < $$foca; \
-	echo "---"; \
-	if diff <(./glf < $$foca 2>/dev/null) $$expected > /dev/null 2>&1; then \
-		echo "PASS"; \
-	else \
-		echo "FAIL - Diferenca:"; \
-		diff <(./glf < $$foca 2>/dev/null) $$expected; \
-	fi
-
-clean:
-	rm -f y.tab.c y.tab.h lex.yy.c glf
+buildYacc:
+	$(PARSER) -d --yacc $(PARSER_FILE) 
+	mv y.tab.c $(OUTPUT_DIR)/$(PARSER_OUTPUT).c
+	mv y.tab.h $(OUTPUT_DIR)/$(PARSER_OUTPUT).h
