@@ -29,16 +29,20 @@ struct atributos
 
 %start S
 
-%left '*' '/'
 %left '+' '-'
+%left '*' '/'
 
 %%
 
 S: E
 	{
-		codigo_gerado = "/*Compilador FOCA*/\n"
-						"#include <stdio.h>\n"
-						"int main(void) {\n";
+		codigo_gerado = "#include <stdio.h>\n"
+						"int main(void) {\n";						
+
+		for (int i = 1; i <= var_temp_qnt; i++)
+		{
+			codigo_gerado += "\tint t" + to_string(i) + ";\n";
+		}
 
 		codigo_gerado += $1.traducao;
 

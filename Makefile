@@ -19,7 +19,7 @@ clean:
 	rm -r $(OUTPUT_DIR)
 
 build: buildLex buildYacc
-	cd $(OUTPUT_DIR) && g++ $(CXXFLAGS) $(PARSER_OUTPUT).c $(SCANNER_OUTPUT).c -o $(OUTPUT_FILE)
+	cd $(OUTPUT_DIR) && g++ $(CXXFLAGS) $(PARSER_OUTPUT).c -o $(OUTPUT_FILE)
 
 buildLex:
 	$(SCANNER) $(SCANNER_FILE) 

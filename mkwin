@@ -16,10 +16,13 @@ all: build
 compile: build
 
 clean: 
-	rm -r $(OUTPUT_DIR)
+	powershell -Command "if (Test-Path compilador.exe) { rm compilador.exe }"
+	powershell -Command "if (Test-Path lex.yy.c) { rm lex.yy.c }"
+	powershell -Command "if (Test-Path y.tab.c) { rm y.tab.c }"
+	powershell -Command "if (Test-Path y.tab.h) { rm y.tab.h }"
 
 build: buildLex buildYacc
-	g++ $(CXXFLAGS) y.tab.c lex.yy.c -o $(OUTPUT_FILE)
+	g++ $(CXXFLAGS) y.tab.c -o $(OUTPUT_FILE)
 
 buildLex:
 	$(SCANNER) $(SCANNER_FILE) 	
