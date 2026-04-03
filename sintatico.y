@@ -11,15 +11,17 @@ int var_temp_qnt;
 int linha = 1;
 string codigo_gerado;
 
+int yylex(void);
+void yyerror(string);
+string gentempcode();
+
+extern FILE* yyin;
+
 struct atributos
 {
 	string label;
 	string traducao;
 };
-
-int yylex(void);
-void yyerror(string);
-string gentempcode();
 
 %}
 
@@ -40,8 +42,7 @@ S: E
 
 		codigo_gerado += $1.traducao;
 
-		codigo_gerado += "\treturn 0;"
-					"\n}\n";
+		codigo_gerado += "\treturn 0;" "\n}\n";
 	}
 ;
 
@@ -85,21 +86,37 @@ int yyparse();
 
 string gentempcode()
 {
-	var_temp_qnt++;
-	return "t" + to_string(var_temp_qnt);
+	var_temp_qnt++; // Usado para contar quantas variáveis temporárias serão usadas no programa
+	return "t" + to_string(var_temp_qnt); // retorna um identificador para essa variável temporária
+}
+
+void yyerror(string MSG)
+{
+	cerr << "Erro na linha " << linha << ": " << MSG << endl;
 }
 
 int main(int argc, char* argv[])
 {
+	// programa de entrada
+	if (argc > 1)
+	{
+		yyin = fopen(argv[1], "r");
+
+		if (!yyin)
+		{
+			perror("fopen");
+			return 1;
+		}
+	}
+	else
+	{
+		yyin = stdin;
+	}
+
 	var_temp_qnt = 0;
 
 	if (yyparse() == 0)
 		cout << codigo_gerado;
 
 	return 0;
-}
-
-void yyerror(string MSG)
-{
-	cerr << "Erro na linha " << linha << ": " << MSG << endl;
 }

@@ -19,13 +19,10 @@ clean:
 	rm -r $(OUTPUT_DIR)
 
 build: buildLex buildYacc
-	cd $(OUTPUT_DIR) && g++ $(CXXFLAGS) $(PARSER_OUTPUT).c $(SCANNER_OUTPUT).c -o $(OUTPUT_FILE)
+	g++ $(CXXFLAGS) y.tab.c lex.yy.c -o $(OUTPUT_FILE)
 
 buildLex:
-	$(SCANNER) $(SCANNER_FILE) 
-	mv lex.yy.c $(OUTPUT_DIR)/$(SCANNER_OUTPUT).c
+	$(SCANNER) $(SCANNER_FILE) 	
 
 buildYacc:
-	$(PARSER) -d --yacc $(PARSER_FILE) 
-	mv y.tab.c $(OUTPUT_DIR)/$(PARSER_OUTPUT).c
-	mv y.tab.h $(OUTPUT_DIR)/$(PARSER_OUTPUT).h
+	$(PARSER) -d --yacc $(PARSER_FILE) 	
