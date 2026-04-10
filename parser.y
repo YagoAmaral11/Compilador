@@ -20,19 +20,29 @@ struct atributos
 struct Simbolo
 {	
 	string labelReal;
-	// TODO: Guardar o tipo do token aqui
+	// TODO: Guardar o tipo do token aqui	
+	string labelValorDeclaracao; // O label da variável temporária usada para guardar o valor de declaração dessa variável
+	string valorDeclaracaoTraducao; // A tradução da expressão que foi usada para declarar esse símbolo
 };
 
 // Declarações de funções
 int yylex(void);
 void yyerror(string);
-string gentempcode();
+string novaVarTemp();
+Simbolo* novaVar();
+bool varExiste(string labelUsuario);
+string varNomeReal(string labelUsuario);
 
 // Variáveis
 int var_temp_qnt; // Contador de variáveis temporárias
+int var_qnt; // Contador de variáveis globais não temporárias criadas
 int linha = 1; // Contador da linha do comando; Atualizado no lexer
 string codigo_gerado; // Código intermediário gerado pelo compilador
-unordered_map<string, Simbolo> tabelaSimbolos; // Tabela de símbolos
+unordered_map<string, Simbolo*> tabelaSimbolos; // Tabela de símbolos
+
+// Macros
+#define tmpVarPrefix "tmp"
+#define varPrefix "var"
 
 %}
 
@@ -49,18 +59,36 @@ unordered_map<string, Simbolo> tabelaSimbolos; // Tabela de símbolos
 %%
 
 OUTPUT: 
-	EXPRESSAO
+	PROGRAMA_MINIMO
 	{
+		// TODO: Depois separar em funções
+
 		codigo_gerado = "#include <stdio.h>\n\n"
 						"int main(void) \n{\n";						
 
 		codigo_gerado += "\t// Variaveis Temporarias\n";
 		for (int i = 1; i <= var_temp_qnt; i++)
 		{
-			codigo_gerado += "\tint t" + to_string(i) + ";\n";
+			codigo_gerado += string("\tint ") + tmpVarPrefix + to_string(i) + ";\n";
 		}
 		codigo_gerado += "\n";
 		
+		// TODO: No momento a declara as variáveis fora de ordem; Dá problema se uma variável depender da outra;
+		// Então, criar uma queue para qual variável deve ser declarada primeiro e declarar as variáveis em ordem
+		codigo_gerado += "\t// Variaveis Globais\n";				
+		for (auto variavel = tabelaSimbolos.begin(); variavel != tabelaSimbolos.end(); ++variavel)
+		{
+			string labelVar = variavel->first;
+			Simbolo* s = variavel->second;
+
+			codigo_gerado += "\t// " + labelVar + ":\n";
+			codigo_gerado += s->valorDeclaracaoTraducao;
+			codigo_gerado += "\tint " + s->labelReal + " = " + s->labelValorDeclaracao + ";" + " // " + labelVar + "\n";
+			codigo_gerado += "\n"; // Espaçamento entre variáveis
+		}
+		codigo_gerado += "\n";		
+		
+
 		codigo_gerado += "\t// Inicio do codigo\n";
 		codigo_gerado += $1.traducao;
 
@@ -68,59 +96,99 @@ OUTPUT:
 	}
 ;
 
+PROGRAMA_MINIMO:
+	COMANDO
+	{
+		$$.traducao = $1.traducao;
+	}
+	|
+	PROGRAMA_MINIMO COMANDO
+	{
+		$$.traducao = $1.traducao + $2.traducao;
+	}
+;
+
+COMANDO:
+	EXPRESSAO ';'	
+	{
+		$$.traducao = $1.traducao;
+	}
+	| ATRIBUICAO ';'
+	{
+		$$.traducao = $1.traducao;
+	}
+;
+
 EXPRESSAO: 	
 	TK_NUM
 	{
-		$$.label = gentempcode();
+		$$.label = novaVarTemp();
 		$$.traducao = "\t" + $$.label + " = " + $1.label + ";\n";
 	}
 	| TK_ID
 	{
-		// TODO: Retornar o valor da variável se ela já existir;
-		// Se ela não existir, retornar erro
+		if (!varExiste($1.label))
+		{
+			// A variável não foi declarada ainda, erro sintático
+			yyerror("Erro Sintático - Símbolo não conhecido -> " + $1.label + " não é conhecido. Verifique se foi declarado.");
+		}
+
+		$$.label = novaVarTemp();
+		$$.traducao = "\t" + $$.label + " = " + varNomeReal($1.label) + ";" + " // " + $1.label + "\n";
 	}
-	| ATRIBUICAO
-	{
-		// TODO: Retornar o valor do resultado da expressão
-	}
-	|'(' EXPRESSAO ')'
+	|	
+	'(' EXPRESSAO ')'
 	{
 		$$.label = $2.label;
 		$$.traducao = $2.traducao;
 	}
 	| EXPRESSAO '+' EXPRESSAO
 	{
-		$$.label = gentempcode();
+		$$.label = novaVarTemp();
 		$$.traducao = $1.traducao + $3.traducao + "\t" + $$.label +
 			" = " + $1.label + " + " + $3.label + ";\n";
 	}
 	| EXPRESSAO '-' EXPRESSAO
 	{
-		$$.label = gentempcode();
+		$$.label = novaVarTemp();
 		$$.traducao = $1.traducao + $3.traducao + "\t" + $$.label +
 			" = " + $1.label + " - " + $3.label + ";\n";
 	}
 	| EXPRESSAO '*' EXPRESSAO
 	{
-		$$.label = gentempcode();
+		$$.label = novaVarTemp();
 		$$.traducao = $1.traducao + $3.traducao + "\t" + $$.label +
 			" = " + $1.label + " * " + $3.label + ";\n";
 	}
 	| EXPRESSAO '/' EXPRESSAO
 	{
-		$$.label = gentempcode();
+		$$.label = novaVarTemp();
 		$$.traducao = $1.traducao + $3.traducao + "\t" + $$.label +
 			" = " + $1.label + " / " + $3.label + ";\n";
-	}	
+	}		
 ;
 
 ATRIBUICAO:
 	TK_ID '=' EXPRESSAO
 	{
-		// OBS: No momento, tratar como uma declaração simples; Depois melhorar
-		// TODO: Retornar uma nova variável alocada com o valor de E
-		// TODO: Verificar se essa variável já foi declarada ou não;
-		// Se já foi declarada, alterar seu valor		
+		// OBS: No momento, tratar como uma declaração simples; Depois melhorar		
+
+		if (varExiste($1.label))
+		{
+			// Se a variável já foi declarada, apenas altera seu valor
+			$$.label = $1.label;
+			$$.traducao = $3.traducao + "\t" + varNomeReal($1.label) + " = " + $3.label + ";" + " // " + $1.label + "\n";
+		}
+		else
+		{
+			$$.label = $1.label;
+			$$.traducao = ""; // Não tem tradução; A tradução da expressão usada para gerar essa atribuição é guardada no simbolo para depois ser criada junto com a declaração
+			
+			Simbolo* s = novaVar();			
+			s->valorDeclaracaoTraducao = $3.traducao;
+			s->labelValorDeclaracao = $3.label;			
+			tabelaSimbolos[$1.label] = s;						
+		}
 	}
 ;
 
@@ -132,11 +200,37 @@ ATRIBUICAO:
 
 int yyparse();
 
-// TODO: Trocar essa função por um controlador
-string gentempcode()
+string novaVarTemp()
 {
 	var_temp_qnt++; // Usado para contar quantas variáveis temporárias serão usadas no programa
-	return "tmp" + to_string(var_temp_qnt); // retorna um identificador para essa variável temporária
+	return tmpVarPrefix + to_string(var_temp_qnt); // retorna um identificador para essa variável temporária
+}
+
+// TODO: Depois passar o tipo dessa variável.
+Simbolo* novaVar()
+{
+	var_qnt++;
+	Simbolo* s = new Simbolo;
+	s->labelReal = varPrefix + to_string(var_qnt);
+	return s;
+}
+
+// Usado para verificar se uma variável de nome labelUsuario
+bool varExiste(string labelUsuario)
+{
+	if (tabelaSimbolos.find(labelUsuario) != tabelaSimbolos.end())
+	{
+		return true;
+	}
+	return false;
+}
+
+// Usado para retornar o nome real de uma variável que EXISTA na tabela de símbolos
+// OBS: Não verifica se o símbolo existe ou não
+string varNomeReal(string labelUsuario)
+{
+	Simbolo* s = tabelaSimbolos[labelUsuario];
+	return s->labelReal;
 }
 
 // TODO: Melhorar essa detecção de erro
@@ -149,6 +243,7 @@ void yyerror(string MSG)
 void initialize()
 {
 	var_temp_qnt = 0;
+	var_qnt = 0;
 }
 
 int main(int argc, char* argv[])
