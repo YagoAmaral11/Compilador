@@ -4,11 +4,10 @@
 #include <unordered_map>
 #include <string>
 
-#define YYSTYPE atributos
-
 using namespace std;
 
 extern FILE* yyin; // yyin é o arquivo de entrada do flex; ao alterar, é possível redirecionar o fluxo
+#define YYSTYPE atributos // YYSTYPE é o tipo de valor usado para cada token da árvore sintática; É diferente do valor numérico gerador por %token
 
 // Structs
 // TODO: Criar estruturas melhores para identificar os Tokens
@@ -127,7 +126,9 @@ ATRIBUICAO:
 
 %%
 
-#include "lex.yy.c"
+// OBS: Esse include deve estar em acordo com os arquivos make, para que não haja erro na compilação; 
+// 		Deve ser o mesmo que $(SCANNER_OUTPUT).c
+#include "scanner.c" 
 
 int yyparse();
 

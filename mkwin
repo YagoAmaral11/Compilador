@@ -1,31 +1,36 @@
+# Versão do makefile para o Windows. Use make <comando> -f mkwin
+
 CXXFLAGS = -Wno-free-nonheap-object
 
 SCANNER = flex
-SCANNER_FILE = lexico.l
-SCANNER_OUTPUT = testeLex
+SCANNER_FILE = scanner.l
+SCANNER_OUTPUT = scanner
 
 PARSER = bison
-PARSER_FILE = sintatico.y
-PARSER_OUTPUT = testeYacc
+PARSER_FILE = parser.y
+PARSER_OUTPUT = parser
 
 OUTPUT_DIR = build
 OUTPUT_FILE = compilador
 
 all: build
-
-compile: build
-
-clean: 
-	powershell -Command "if (Test-Path compilador.exe) { rm compilador.exe }"
-	powershell -Command "if (Test-Path lex.yy.c) { rm lex.yy.c }"
-	powershell -Command "if (Test-Path y.tab.c) { rm y.tab.c }"
-	powershell -Command "if (Test-Path y.tab.h) { rm y.tab.h }"
-
-build: buildLex buildYacc
-	g++ $(CXXFLAGS) y.tab.c -o $(OUTPUT_FILE)
+build: clean buildLex buildYacc compile	
+generate: clean buildLex buildYacc
+clear: clean
 
 buildLex:
 	$(SCANNER) $(SCANNER_FILE) 	
+	powershell -Command "if (-Not (Test-Path $(OUTPUT_DIR))) { New-Item -ItemType Directory -Path $(OUTPUT_DIR) }"
+	powershell -Command "Move-Item -Path lex.yy.c \"$(OUTPUT_DIR)/$(SCANNER_OUTPUT).c\"" 
 
 buildYacc:
 	$(PARSER) -d --yacc $(PARSER_FILE) 	
+	powershell -Command "if (-Not (Test-Path $(OUTPUT_DIR))) { New-Item -ItemType Directory -Path $(OUTPUT_DIR) }"
+	powershell -Command "Move-Item -Path y.tab.c -Destination \"$(OUTPUT_DIR)/$(PARSER_OUTPUT).c\""
+	powershell -Command "Move-Item -Path y.tab.h -Destination \"$(OUTPUT_DIR)/$(PARSER_OUTPUT).h\""
+	
+compile: 
+	g++ $(CXXFLAGS) $(OUTPUT_DIR)/$(PARSER_OUTPUT).c -o $(OUTPUT_DIR)/$(OUTPUT_FILE)
+
+clean: 
+	powershell -Command "if (Test-Path $(OUTPUT_DIR)) { rm -r $(OUTPUT_DIR) }"

@@ -1,31 +1,34 @@
 CXXFLAGS = -Wno-free-nonheap-object
 
 SCANNER = flex
-SCANNER_FILE = lexico.l
-SCANNER_OUTPUT = testeLex
+SCANNER_FILE = scanner.l
+SCANNER_OUTPUT = scanner
 
 PARSER = bison
-PARSER_FILE = sintatico.y
-PARSER_OUTPUT = testeYacc
+PARSER_FILE = parser.y
+PARSER_OUTPUT = parser
 
 OUTPUT_DIR = build
 OUTPUT_FILE = compilador
 
 all: build
-
-compile: build
-
-clean: 
-	rm -r $(OUTPUT_DIR)
-
-build: buildLex buildYacc
-	cd $(OUTPUT_DIR) && g++ $(CXXFLAGS) $(PARSER_OUTPUT).c -o $(OUTPUT_FILE)
+build: clean buildLex buildYacc	compile
+generate: clean buildLex buildYacc
+clear: clean
 
 buildLex:
 	$(SCANNER) $(SCANNER_FILE) 
+	mkdir -p $(OUTPUT_DIR)
 	mv lex.yy.c $(OUTPUT_DIR)/$(SCANNER_OUTPUT).c
 
 buildYacc:
-	$(PARSER) -d --yacc $(PARSER_FILE) 
+	$(PARSER) -d --yacc $(PARSER_FILE)
+	mkdir -p $(OUTPUT_DIR)
 	mv y.tab.c $(OUTPUT_DIR)/$(PARSER_OUTPUT).c
 	mv y.tab.h $(OUTPUT_DIR)/$(PARSER_OUTPUT).h
+	
+compile: 
+	cd $(OUTPUT_DIR) && g++ $(CXXFLAGS) $(PARSER_OUTPUT).c -o $(OUTPUT_FILE)
+
+clean: 
+	rm -f -r $(OUTPUT_DIR)
