@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <unordered_map>
+#include <queue>
 #include <string>
 
 using namespace std;
@@ -39,6 +40,7 @@ int var_qnt; // Contador de variáveis globais não temporárias criadas
 int linha = 1; // Contador da linha do comando; Atualizado no lexer
 string codigo_gerado; // Código intermediário gerado pelo compilador
 unordered_map<string, Simbolo*> tabelaSimbolos; // Tabela de símbolos
+queue<string> ordemDeclaracaoSimbolos; // A ordem de declaração dos símbolos da tabela
 
 // Macros
 #define tmpVarPrefix "tmp"
@@ -66,25 +68,27 @@ OUTPUT:
 		codigo_gerado = "#include <stdio.h>\n\n"
 						"int main(void) \n{\n";						
 
+
 		codigo_gerado += "\t// Variaveis Temporarias\n";
 		for (int i = 1; i <= var_temp_qnt; i++)
 		{
 			codigo_gerado += string("\tint ") + tmpVarPrefix + to_string(i) + ";\n";
 		}
 		codigo_gerado += "\n";
+				
 		
-		// TODO: No momento a declara as variáveis fora de ordem; Dá problema se uma variável depender da outra;
-		// Então, criar uma queue para qual variável deve ser declarada primeiro e declarar as variáveis em ordem
 		codigo_gerado += "\t// Variaveis Globais\n";				
-		for (auto variavel = tabelaSimbolos.begin(); variavel != tabelaSimbolos.end(); ++variavel)
-		{
-			string labelVar = variavel->first;
-			Simbolo* s = variavel->second;
+		while (!ordemDeclaracaoSimbolos.empty())
+		{			 
+			string labelVar = ordemDeclaracaoSimbolos.front();
+			Simbolo* s = tabelaSimbolos[labelVar];
 
 			codigo_gerado += "\t// " + labelVar + ":\n";
 			codigo_gerado += s->valorDeclaracaoTraducao;
 			codigo_gerado += "\tint " + s->labelReal + " = " + s->labelValorDeclaracao + ";" + " // " + labelVar + "\n";
 			codigo_gerado += "\n"; // Espaçamento entre variáveis
+
+			ordemDeclaracaoSimbolos.pop();
 		}
 		codigo_gerado += "\n";		
 		
@@ -187,7 +191,9 @@ ATRIBUICAO:
 			Simbolo* s = novaVar();			
 			s->valorDeclaracaoTraducao = $3.traducao;
 			s->labelValorDeclaracao = $3.label;			
+
 			tabelaSimbolos[$1.label] = s;						
+			ordemDeclaracaoSimbolos.push($1.label);
 		}
 	}
 ;
@@ -200,6 +206,7 @@ ATRIBUICAO:
 
 int yyparse();
 
+// Cria um novo identificador para uma variável temporária
 string novaVarTemp()
 {
 	var_temp_qnt++; // Usado para contar quantas variáveis temporárias serão usadas no programa
@@ -215,7 +222,7 @@ Simbolo* novaVar()
 	return s;
 }
 
-// Usado para verificar se uma variável de nome labelUsuario
+// Usado para verificar se existe uma variável de nome labelUsuario
 bool varExiste(string labelUsuario)
 {
 	if (tabelaSimbolos.find(labelUsuario) != tabelaSimbolos.end())
