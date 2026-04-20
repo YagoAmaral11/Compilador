@@ -1,6 +1,7 @@
 %{
 
 #include <string>
+#include <cstring>
 
 %}
 
@@ -16,14 +17,14 @@ ID {LETRA}({DIGITO}|{LETRA})*
 
 %%
 
-"\n"		{ linha++; }
-{DELIM} 	{}
-[=]         { return *yytext; }
-[+-/*]			{ return *yytext; }
-[()]        { return *yytext; }
-[;]         { return *yytext; }
-{NUM}		{ yylval.label = yytext; return TK_NUM; }
-{ID}        { yylval.label = yytext; return TK_ID; }
-.			{ fprintf(stderr, "Caractere nao reconhecido na linha %d: %s\n", linha, yytext); }
+"\n"		{ linha++; coluna = 0; }
+{DELIM} 	{ coluna += strlen(yytext); }
+[=]         { coluna++; return *yytext; }
+[+-/*]			{ coluna++; return *yytext; }
+[()]        { coluna++; return *yytext; }
+[;]         { coluna++; return *yytext; }
+{NUM}		{ coluna += strlen(yytext); yylval.label = yytext; return TK_NUM; }
+{ID}        { coluna += strlen(yytext); yylval.label = yytext; return TK_ID; }
+.			{ coluna += strlen(yytext); fprintf(stderr, "Erro Léxico: Caracteres não reconhecido '%s', em Linha: %d, Coluna: %d \n", yytext, linha, coluna); }
 
 %%

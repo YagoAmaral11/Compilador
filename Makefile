@@ -1,4 +1,4 @@
-CXXFLAGS = -Wno-free-nonheap-object
+CXXFLAGS = -Wall -Wunused-function -Wno-free-nonheap-object -finput-charset=UTF-8 -fexec-charset=UTF-8
 
 SCANNER = flex
 SCANNER_FILE = scanner.l

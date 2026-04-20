@@ -4,6 +4,8 @@
 #include <unordered_map>
 #include <queue>
 #include <string>
+#include <locale>
+#include <cstdlib>
 
 using namespace std;
 
@@ -33,6 +35,7 @@ struct Simbolo
 // Declarações de funções
 int yylex(void);
 void yyerror(string);
+void semanticError(string MSG);
 string novaVarTemp();
 Simbolo* novaVar();
 bool varExiste(string labelUsuario);
@@ -42,7 +45,10 @@ string varNomeReal(string labelUsuario);
 // Variáveis
 int var_temp_qnt; // Contador de variáveis temporárias
 int var_qnt; // Contador de variáveis globais não temporárias criadas
+
 int linha = 1; // Contador da linha do comando; Atualizado no lexer
+int coluna = 0; // Contador de caracteres do comando; Atualizado no lexer
+
 string codigo_gerado; // Código intermediário gerado pelo compilador
 unordered_map<string, Simbolo*> tabelaSimbolos; // Tabela de símbolos
 queue<string> ordemDeclaracaoSimbolos; // A ordem de declaração dos símbolos da tabela
@@ -139,13 +145,17 @@ EXPRESSAO:
 		if (!varExiste($1.label))
 		{
 			// A variável não foi declarada ainda, erro
-			yyerror("Erro - Símbolo não conhecido -> '" + $1.label + "'' não é conhecido. Verifique se foi declarado.");
+			// yyerror("Símbolo não conhecido -> '" + $1.label + "'' não é conhecido. Verifique se foi declarado.");
+			semanticError("Símbolo não conhecido -> '" + $1.label + "' não é conhecido. Verifique se foi declarado.");
+			YYABORT;
 		}
 
 		if (!varInicializada($1.label))
 		{
 			// A variável não foi inicializada ainda, erro
-			yyerror("Erro - Variável não inicializada -> '" + $1.label + "''. Não é possível usar uma variável não inicializada");
+			// yyerror("Variável não inicializada -> '" + $1.label + "''. Não é possível usar uma variável não inicializada");
+			semanticError("Variável não inicializada -> '" + $1.label + "'. Não é possível usar uma variável não inicializada");
+			YYABORT;
 		}
 
 		$$.label = novaVarTemp();
@@ -264,10 +274,17 @@ string varNomeReal(string labelUsuario)
 	return s->labelReal;
 }
 
-// TODO: Melhorar essa detecção de erro
+// Usado pelo bison para mostrar erros sintáticos
 void yyerror(string MSG)
 {
-	cerr << "Erro na linha " << linha << ": " << MSG << endl;
+	cerr << "Erro: \"" << MSG << "\", em Linha: " << linha << " Coluna: " << coluna << endl;			
+}
+
+// Usado pelo compilador para tratar erros semânticos
+// Depois de chamar ele, deve-se executar YYABORT na action
+void semanticError(string MSG)
+{
+	fprintf(stderr, "Erro: \"%s\", em Linha: %d, Coluna: %d\n", MSG.c_str(), linha, coluna);
 }
 
 // Usado para inicializar as estruturas e controladores usados no compilador;
@@ -279,6 +296,9 @@ void initialize()
 
 int main(int argc, char* argv[])
 {
+	// Para aceitar todos os tipos de caractere
+	std::setlocale(LC_ALL, "");
+
 	// programa de entrada
 	if (argc > 1)
 	{
