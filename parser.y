@@ -20,8 +20,12 @@ struct atributos
 
 struct Simbolo
 {	
-	string labelReal;
+	// Informações sobre o Simbolo
+	string labelReal;	
 	// TODO: Guardar o tipo do token aqui	
+
+	// Informações sobre a declaração
+	bool simboloInicializado; // Se esse símbolo já foi inicializado com algum valor; Caso contrário, não pode ser usado
 	string labelValorDeclaracao; // O label da variável temporária usada para guardar o valor de declaração dessa variável
 	string valorDeclaracaoTraducao; // A tradução da expressão que foi usada para declarar esse símbolo
 };
@@ -32,6 +36,7 @@ void yyerror(string);
 string novaVarTemp();
 Simbolo* novaVar();
 bool varExiste(string labelUsuario);
+bool varInicializada(string labelUsuario);
 string varNomeReal(string labelUsuario);
 
 // Variáveis
@@ -133,8 +138,14 @@ EXPRESSAO:
 	{
 		if (!varExiste($1.label))
 		{
-			// A variável não foi declarada ainda, erro sintático
-			yyerror("Erro Sintático - Símbolo não conhecido -> " + $1.label + " não é conhecido. Verifique se foi declarado.");
+			// A variável não foi declarada ainda, erro
+			yyerror("Erro - Símbolo não conhecido -> '" + $1.label + "'' não é conhecido. Verifique se foi declarado.");
+		}
+
+		if (!varInicializada($1.label))
+		{
+			// A variável não foi inicializada ainda, erro
+			yyerror("Erro - Variável não inicializada -> '" + $1.label + "''. Não é possível usar uma variável não inicializada");
 		}
 
 		$$.label = novaVarTemp();
@@ -174,23 +185,28 @@ EXPRESSAO:
 
 ATRIBUICAO:
 	TK_ID '=' EXPRESSAO
-	{
-		// OBS: No momento, tratar como uma declaração simples; Depois melhorar		
-
+	{		
 		if (varExiste($1.label))
 		{
-			// Se a variável já foi declarada, apenas altera seu valor
+			// Se a variável já foi declarada, apenas altera seu valor; 
+			// Se a variável não era inicializada ainda, agora ela é;
 			$$.label = $1.label;
 			$$.traducao = $3.traducao + "\t" + varNomeReal($1.label) + " = " + $3.label + ";" + " // " + $1.label + "\n";
+
+			Simbolo* s = tabelaSimbolos[$1.label];
+			s->simboloInicializado = true;
 		}
 		else
 		{
+			// TODO: Isso é uma declaração implícita; Mas só funciona ainda pq não existe tipos na LP. Depois que existir, melhorar esse código para inferir o tipo da variável
+
 			$$.label = $1.label;
 			$$.traducao = ""; // Não tem tradução; A tradução da expressão usada para gerar essa atribuição é guardada no simbolo para depois ser criada junto com a declaração
 			
 			Simbolo* s = novaVar();			
 			s->valorDeclaracaoTraducao = $3.traducao;
 			s->labelValorDeclaracao = $3.label;			
+			s->simboloInicializado = true;
 
 			tabelaSimbolos[$1.label] = s;						
 			ordemDeclaracaoSimbolos.push($1.label);
@@ -230,6 +246,14 @@ bool varExiste(string labelUsuario)
 		return true;
 	}
 	return false;
+}
+
+// Usado para verificar se uma variável que EXISTA já foi inicializada
+// OBS: Não verifica se a variável realmente existe
+bool varInicializada(string labelUsuario)
+{
+	Simbolo* s = tabelaSimbolos[labelUsuario];
+	return s-> simboloInicializado;
 }
 
 // Usado para retornar o nome real de uma variável que EXISTA na tabela de símbolos
