@@ -18,6 +18,7 @@ struct atributos
 {
 	string label; // "Endereço" dessa variável; O nome da variável que carrega o valor dessa árvore sintática
 	string traducao; // A tradução dessa árvore sintática para o código intermediário
+	string tipo;	// Tipo do token
 };
 
 struct Simbolo
@@ -42,6 +43,7 @@ Simbolo* novaVar();
 bool varExiste(string labelUsuario);
 bool varInicializada(string labelUsuario);
 string varNomeReal(string labelUsuario);
+string varTipo(string labelUsuario);
 
 // Variáveis
 int var_temp_qnt; // Contador de variáveis temporárias
@@ -53,6 +55,9 @@ int coluna = 0; // Contador de caracteres do comando; Atualizado no lexer
 string codigo_gerado; // Código intermediário gerado pelo compilador
 unordered_map<string, Simbolo*> tabelaSimbolos; // Tabela de símbolos
 queue<string> ordemDeclaracaoSimbolos; // A ordem de declaração dos símbolos da tabela
+
+unordered_map<string, Simbolo*> tabelaTemporarios; // Tabela de símbolos
+queue<string> ordemDeclaracaoTemporarios; // A ordem de declaração dos símbolos da tabela
 
 // Macros
 #define tmpVarPrefix "tmp"
@@ -85,7 +90,7 @@ OUTPUT:
 		codigo_gerado += "\t// Variaveis Temporarias\n";
 		for (int i = 1; i <= var_temp_qnt; i++)
 		{
-			codigo_gerado += string("\tint ") + tmpVarPrefix + to_string(i) + ";\n";
+			codigo_gerado += "\t" +  + tmpVarPrefix + to_string(i) + ";\n";
 		}
 		codigo_gerado += "\n";
 				
@@ -98,7 +103,7 @@ OUTPUT:
 
 			codigo_gerado += "\t// " + labelVar + ":\n";
 			codigo_gerado += s->valorDeclaracaoTraducao;
-			codigo_gerado += "\tint " + s->labelReal + " = " + s->labelValorDeclaracao + ";" + " // " + labelVar + "\n";
+			codigo_gerado += "\t" + s->tipoDeclarado + s->labelReal + " = " + s->labelValorDeclaracao + ";" + " // " + labelVar + "\n";
 			codigo_gerado += "\n"; // Espaçamento entre variáveis
 
 			ordemDeclaracaoSimbolos.pop();
@@ -143,7 +148,8 @@ COMANDO:
 EXPRESSAO: 	
 	TK_NUM
 	{
-		$$.label = novaVarTemp();
+		$$.label = novaVarTemp($1.tipo);
+		$$.tipo = $1.tipo;
 		$$.traducao = "\t" + $$.label + " = " + $1.label + ";\n";
 	}
 	| TK_ID
@@ -165,37 +171,59 @@ EXPRESSAO:
 		}
 
 		$$.label = novaVarTemp();
+		$$.tipo = varTipo($1.label);
 		$$.traducao = "\t" + $$.label + " = " + varNomeReal($1.label) + ";" + " // " + $1.label + "\n";
 	}
 	|	
 	'(' EXPRESSAO ')'
 	{
 		$$.label = $2.label;
+		$$.tipo = $2.tipo;
 		$$.traducao = $2.traducao;
 	}
 	| EXPRESSAO '+' EXPRESSAO
 	{
-		$$.label = novaVarTemp();
-		$$.traducao = $1.traducao + $3.traducao + "\t" + $$.label +
-			" = " + $1.label + " + " + $3.label + ";\n";
+		if (((string($1.tipo) == "int") && (string($3.tipo) == "int")) || ((string($1.tipo) == "float") && (string($3.tipo) == "float")))
+		{
+			// Tipos de numeros iguais
+			$$.label = novaVarTemp();
+			$$.tipo = $1.tipo;
+			$$.traducao = $1.traducao + $3.traducao + "\t" + $$.label +
+				" = " + $1.label + " + " + $3.label + ";\n";
+		}
 	}
 	| EXPRESSAO '-' EXPRESSAO
 	{
-		$$.label = novaVarTemp();
-		$$.traducao = $1.traducao + $3.traducao + "\t" + $$.label +
-			" = " + $1.label + " - " + $3.label + ";\n";
+		if (((string($1.tipo) == "int") && (string($3.tipo) == "int")) || ((string($1.tipo) == "float") && (string($3.tipo) == "float")))
+		{
+			// Tipos de numeros iguais
+			$$.label = novaVarTemp();
+			$$.tipo = $1.tipo;
+			$$.traducao = $1.traducao + $3.traducao + "\t" + $$.label +
+				" = " + $1.label + " - " + $3.label + ";\n";
+		}
 	}
 	| EXPRESSAO '*' EXPRESSAO
 	{
-		$$.label = novaVarTemp();
-		$$.traducao = $1.traducao + $3.traducao + "\t" + $$.label +
-			" = " + $1.label + " * " + $3.label + ";\n";
+		if (((string($1.tipo) == "int") && (string($3.tipo) == "int")) || ((string($1.tipo) == "float") && (string($3.tipo) == "float")))
+		{
+			// Tipos de numeros iguais
+			$$.label = novaVarTemp();
+			$$.tipo = $1.tipo;
+			$$.traducao = $1.traducao + $3.traducao + "\t" + $$.label +
+				" = " + $1.label + " * " + $3.label + ";\n";
+		}			
 	}
 	| EXPRESSAO '/' EXPRESSAO
 	{
-		$$.label = novaVarTemp();
-		$$.traducao = $1.traducao + $3.traducao + "\t" + $$.label +
-			" = " + $1.label + " / " + $3.label + ";\n";
+		if (((string($1.tipo) == "int") && (string($3.tipo) == "int")) || ((string($1.tipo) == "float") && (string($3.tipo) == "float")))
+		{
+			// Tipos de numeros iguais
+			$$.label = novaVarTemp();
+			$$.tipo = $1.tipo;
+			$$.traducao = $1.traducao + $3.traducao + "\t" + $$.label +
+				" = " + $1.label + " / " + $3.label + ";\n";
+		}
 	}		
 ;
 
@@ -211,6 +239,7 @@ ATRIBUICAO:
 
 			Simbolo* s = tabelaSimbolos[$1.label];
 			s->simboloInicializado = true;
+			s->tipoDeclarado = $3.tipo;
 		}
 		else
 		{
@@ -219,7 +248,7 @@ ATRIBUICAO:
 			$$.label = $1.label;
 			$$.traducao = ""; // Não tem tradução; A tradução da expressão usada para gerar essa atribuição é guardada no simbolo para depois ser criada junto com a declaração
 			
-			Simbolo* s = novaVar();			
+			Simbolo* s = novaVar($3.tipo);			
 			s->valorDeclaracaoTraducao = $3.traducao;
 			s->labelValorDeclaracao = $3.label;			
 			s->simboloInicializado = true;
@@ -243,8 +272,10 @@ DECLARACAO:
 			$$.label = $2.label;
 			$$.traducao = "";
 
-			Simbolo* s = novoVar();
-			s->simboloInicializado = true;
+			Simbolo* s = novoVar($1.label);
+
+			tabelaSimbolos[$2.label] = s;
+			ordemDeclaracaoSimbolos.push($2.label);
 		}
 	}
 ;
@@ -257,18 +288,27 @@ DECLARACAO:
 int yyparse();
 
 // Cria um novo identificador para uma variável temporária
-string novaVarTemp()
+string novaVarTemp(string tipo)
 {
-	var_temp_qnt++; // Usado para contar quantas variáveis temporárias serão usadas no programa
-	return tmpVarPrefix + to_string(var_temp_qnt); // retorna um identificador para essa variável temporária
+	string nome = tmpVarPrefix + to_string(var_temp_qnt++);
+
+	Simbolo* s = new Simbolo;
+	s->labelReal = nome;
+	s->tipoDeclarado = tipo;
+
+	tabelaTemporarios[nome] = s;
+	ordemDeclaracaoTemporarios.push(nome);
+
+	return nome;
 }
 
 // TODO: Depois passar o tipo dessa variável.
-Simbolo* novaVar()
+Simbolo* novaVar(string tipo)
 {
 	var_qnt++;
 	Simbolo* s = new Simbolo;
 	s->labelReal = varPrefix + to_string(var_qnt);
+	s->tipoDeclarado = tipo;
 	return s;
 }
 
@@ -296,6 +336,13 @@ string varNomeReal(string labelUsuario)
 {
 	Simbolo* s = tabelaSimbolos[labelUsuario];
 	return s->labelReal;
+}
+
+//Usado para ver tipo do simbolo. OBS: Não verifica se o símbolo existe ou não
+string varTipo(string labelUsuario)
+{
+	Simbolo* s = tabelaSimbolos[labelUsuario];
+	return s->tipoDeclarado;
 }
 
 // Usado pelo bison para mostrar erros sintáticos
