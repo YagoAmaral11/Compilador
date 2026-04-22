@@ -10,6 +10,7 @@
 ESPACO [ \t]
 DIGITO [0-9]
 LETRA [a-zA-z_]
+TIPO (int|float)
 
 DELIM {ESPACO}+
 NUM {DIGITO}+
@@ -25,6 +26,7 @@ ID {LETRA}({DIGITO}|{LETRA})*
 [;]         { coluna++; return *yytext; }
 {NUM}		{ coluna += strlen(yytext); yylval.label = yytext; return TK_NUM; }
 {ID}        { coluna += strlen(yytext); yylval.label = yytext; return TK_ID; }
+{TIPO}      { coluna += strlen(yytext); yylval.label = yytext; return TK_TIPO}
 .			{ coluna += strlen(yytext); fprintf(stderr, "Erro Léxico: Caracteres não reconhecido '%s', em Linha: %d, Coluna: %d \n", yytext, linha, coluna); }
 
 %%

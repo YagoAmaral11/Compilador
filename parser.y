@@ -28,6 +28,7 @@ struct Simbolo
 
 	// Informações sobre a declaração
 	bool simboloInicializado; // Se esse símbolo já foi inicializado com algum valor; Caso contrário, não pode ser usado
+	string tipoDeclarado; // Tipo que foi declarado a variavel.
 	string labelValorDeclaracao; // O label da variável temporária usada para guardar o valor de declaração dessa variável
 	string valorDeclaracaoTraducao; // A tradução da expressão que foi usada para declarar esse símbolo
 };
@@ -61,6 +62,7 @@ queue<string> ordemDeclaracaoSimbolos; // A ordem de declaração dos símbolos 
 
 %token TK_NUM
 %token TK_ID
+%token TK_TIPO
 
 %start OUTPUT
 
@@ -129,6 +131,10 @@ COMANDO:
 		$$.traducao = $1.traducao;
 	}
 	| ATRIBUICAO ';'
+	{
+		$$.traducao = $1.traducao;
+	}
+	| DECLARACAO ';'
 	{
 		$$.traducao = $1.traducao;
 	}
@@ -224,6 +230,24 @@ ATRIBUICAO:
 	}
 ;
 
+DECLARACAO:
+	TK_TIPO TK_ID // TODO: TEMINAR ESSA PORRA, MUITA COISA MANÉ
+	{
+		if (varExiste($2.label))
+		{
+			semanticError("Simbolo ja declarado -> '" + $1.label + "'. Nao e possivel declarar novamente, escolha outro nome.");
+			YYABORT;
+		}
+		else
+		{
+			$$.label = $2.label;
+			$$.traducao = "";
+
+			Simbolo* s = novoVar();
+			s->simboloInicializado = true;
+		}
+	}
+;
 %%
 
 // OBS: Esse include deve estar em acordo com os arquivos make, para que não haja erro na compilação; 
