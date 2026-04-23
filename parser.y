@@ -106,8 +106,15 @@ OUTPUT:
 			Simbolo* s = tabelaSimbolos[labelVar];
 
 			codigo_gerado += "\t// " + labelVar + ":\n";
-			codigo_gerado += s->valorDeclaracaoTraducao;
-			codigo_gerado += "\t" + s->tipoDeclarado + " " + s->labelReal + " = " + s->labelValorDeclaracao + ";" + " // " + labelVar + "\n";
+			if(!s->valorDeclaracaoTraducao.empty())
+			{
+				codigo_gerado += s->valorDeclaracaoTraducao;
+				codigo_gerado += "\t" + s->tipoDeclarado + " " + s->labelReal + " = " + s->labelValorDeclaracao + ";" + " // " + labelVar + "\n";
+			} else 
+			{
+				codigo_gerado += "\t" + s->tipoDeclarado + " " + s->labelReal + ";" + " // " + labelVar + "\n";
+			}
+
 			codigo_gerado += "\n"; // Espaçamento entre variáveis
 
 			ordemDeclaracaoSimbolos.pop();
