@@ -31,8 +31,11 @@
 *.out
 *.app
 
+# Arquivos de output do flex e do bison
 *.tab.c
 *.tab.h
 *.yy.c
 *.yy.h
-compilador.exe
+
+# Pasta bin dos arquivos de execução/source compilados
+/build/
