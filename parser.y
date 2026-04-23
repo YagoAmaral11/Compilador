@@ -38,8 +38,8 @@ struct Simbolo
 int yylex(void);
 void yyerror(string);
 void semanticError(string MSG);
-string novaVarTemp();
-Simbolo* novaVar();
+string novaVarTemp(string tipo);
+Simbolo* novaVar(string tipo);
 bool varExiste(string labelUsuario);
 bool varInicializada(string labelUsuario);
 string varNomeReal(string labelUsuario);
@@ -88,14 +88,18 @@ OUTPUT:
 
 
 		codigo_gerado += "\t// Variaveis Temporarias\n";
-		for (int i = 1; i <= var_temp_qnt; i++)
-		{
-			codigo_gerado += "\t" +  + tmpVarPrefix + to_string(i) + ";\n";
+		while (!ordemDeclaracaoTemporarios.empty())
+		{			 
+			string labelVar = ordemDeclaracaoTemporarios.front();
+			Simbolo* s = tabelaTemporarios[labelVar];
+
+			codigo_gerado += "\t" + s->tipoDeclarado + " " + s->labelReal + ";\n";
+
+			ordemDeclaracaoTemporarios.pop();
 		}
-		codigo_gerado += "\n";
 				
 		
-		codigo_gerado += "\t// Variaveis Globais\n";				
+		codigo_gerado += "\n\t// Variaveis Globais\n";				
 		while (!ordemDeclaracaoSimbolos.empty())
 		{			 
 			string labelVar = ordemDeclaracaoSimbolos.front();
@@ -103,7 +107,7 @@ OUTPUT:
 
 			codigo_gerado += "\t// " + labelVar + ":\n";
 			codigo_gerado += s->valorDeclaracaoTraducao;
-			codigo_gerado += "\t" + s->tipoDeclarado + s->labelReal + " = " + s->labelValorDeclaracao + ";" + " // " + labelVar + "\n";
+			codigo_gerado += "\t" + s->tipoDeclarado + " " + s->labelReal + " = " + s->labelValorDeclaracao + ";" + " // " + labelVar + "\n";
 			codigo_gerado += "\n"; // Espaçamento entre variáveis
 
 			ordemDeclaracaoSimbolos.pop();
@@ -170,7 +174,7 @@ EXPRESSAO:
 			YYABORT;
 		}
 
-		$$.label = novaVarTemp();
+		$$.label = novaVarTemp($1.tipo);
 		$$.tipo = varTipo($1.label);
 		$$.traducao = "\t" + $$.label + " = " + varNomeReal($1.label) + ";" + " // " + $1.label + "\n";
 	}
@@ -186,7 +190,7 @@ EXPRESSAO:
 		if (((string($1.tipo) == "int") && (string($3.tipo) == "int")) || ((string($1.tipo) == "float") && (string($3.tipo) == "float")))
 		{
 			// Tipos de numeros iguais
-			$$.label = novaVarTemp();
+			$$.label = novaVarTemp($1.tipo);
 			$$.tipo = $1.tipo;
 			$$.traducao = $1.traducao + $3.traducao + "\t" + $$.label +
 				" = " + $1.label + " + " + $3.label + ";\n";
@@ -197,7 +201,7 @@ EXPRESSAO:
 		if (((string($1.tipo) == "int") && (string($3.tipo) == "int")) || ((string($1.tipo) == "float") && (string($3.tipo) == "float")))
 		{
 			// Tipos de numeros iguais
-			$$.label = novaVarTemp();
+			$$.label = novaVarTemp($1.tipo);
 			$$.tipo = $1.tipo;
 			$$.traducao = $1.traducao + $3.traducao + "\t" + $$.label +
 				" = " + $1.label + " - " + $3.label + ";\n";
@@ -208,7 +212,7 @@ EXPRESSAO:
 		if (((string($1.tipo) == "int") && (string($3.tipo) == "int")) || ((string($1.tipo) == "float") && (string($3.tipo) == "float")))
 		{
 			// Tipos de numeros iguais
-			$$.label = novaVarTemp();
+			$$.label = novaVarTemp($1.tipo);
 			$$.tipo = $1.tipo;
 			$$.traducao = $1.traducao + $3.traducao + "\t" + $$.label +
 				" = " + $1.label + " * " + $3.label + ";\n";
@@ -219,7 +223,7 @@ EXPRESSAO:
 		if (((string($1.tipo) == "int") && (string($3.tipo) == "int")) || ((string($1.tipo) == "float") && (string($3.tipo) == "float")))
 		{
 			// Tipos de numeros iguais
-			$$.label = novaVarTemp();
+			$$.label = novaVarTemp($1.tipo);
 			$$.tipo = $1.tipo;
 			$$.traducao = $1.traducao + $3.traducao + "\t" + $$.label +
 				" = " + $1.label + " / " + $3.label + ";\n";
@@ -272,7 +276,7 @@ DECLARACAO:
 			$$.label = $2.label;
 			$$.traducao = "";
 
-			Simbolo* s = novoVar($1.label);
+			Simbolo* s = novaVar($2.label);
 
 			tabelaSimbolos[$2.label] = s;
 			ordemDeclaracaoSimbolos.push($2.label);
