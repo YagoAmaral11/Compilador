@@ -201,6 +201,10 @@ EXPRESSAO:
 			$$.tipo = $1.tipo;
 			$$.traducao = $1.traducao + $3.traducao + "\t" + $$.label +
 				" = " + $1.label + " + " + $3.label + ";\n";
+		} else
+		{
+			semanticError("Expressao invalida!");
+			YYABORT;
 		}
 	}
 	| EXPRESSAO '-' EXPRESSAO
@@ -212,6 +216,10 @@ EXPRESSAO:
 			$$.tipo = $1.tipo;
 			$$.traducao = $1.traducao + $3.traducao + "\t" + $$.label +
 				" = " + $1.label + " - " + $3.label + ";\n";
+		} else
+		{
+			semanticError("Expressao invalida!");
+			YYABORT;
 		}
 	}
 	| EXPRESSAO '*' EXPRESSAO
@@ -223,7 +231,11 @@ EXPRESSAO:
 			$$.tipo = $1.tipo;
 			$$.traducao = $1.traducao + $3.traducao + "\t" + $$.label +
 				" = " + $1.label + " * " + $3.label + ";\n";
-		}			
+		} else
+		{
+			semanticError("Expressao invalida!");
+			YYABORT;
+		}		
 	}
 	| EXPRESSAO '/' EXPRESSAO
 	{
@@ -234,6 +246,10 @@ EXPRESSAO:
 			$$.tipo = $1.tipo;
 			$$.traducao = $1.traducao + $3.traducao + "\t" + $$.label +
 				" = " + $1.label + " / " + $3.label + ";\n";
+		} else
+		{
+			semanticError("Expressao invalida!");
+			YYABORT;
 		}
 	}		
 ;
