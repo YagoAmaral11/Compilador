@@ -1,3 +1,3 @@
-char a;
-a = 'a';
-b = 'b';
+a = false;
+bool b;
+b = a;

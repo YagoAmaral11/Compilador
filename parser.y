@@ -272,16 +272,24 @@ ATRIBUICAO:
 		{
 			// TODO: Isso é uma declaração implícita; Mas só funciona ainda pq não existe tipos na LP. Depois que existir, melhorar esse código para inferir o tipo da variável
 
-			$$.label = $1.label;
+			/*$$.label = $1.label;
 			$$.traducao = ""; // Não tem tradução; A tradução da expressão usada para gerar essa atribuição é guardada no simbolo para depois ser criada junto com a declaração
 			
 			Simbolo* s = novaVar($3.tipo);			
 			s->valorDeclaracaoTraducao = $3.traducao;
 			s->labelValorDeclaracao = $3.label;			
+			s->simboloInicializado = true;*/
+
+			$$.label = $1.label;
+			
+			Simbolo* s = novaVar($3.tipo);
 			s->simboloInicializado = true;
 
 			tabelaSimbolos[$1.label] = s;						
 			ordemDeclaracaoSimbolos.push($1.label);
+
+			$$.traducao = $3.traducao + "\t" + varNomeReal($1.label) + " = " + $3.label + ";" + " // " + $1.label + "\n";
+
 		}
 	}
 ;

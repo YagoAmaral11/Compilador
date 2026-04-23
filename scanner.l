@@ -9,7 +9,7 @@
 
 ESPACO [ \t]
 DIGITO [0-9]
-LETRA [a-zA-z_]
+LETRA [a-zA-Z_]
 CARACTER ([^\'\\\n]|\\.)
 
 DELIM {ESPACO}+
