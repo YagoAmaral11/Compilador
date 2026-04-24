@@ -44,6 +44,8 @@ bool varInicializada(string labelUsuario);
 string varNomeReal(string labelUsuario);
 TIPO varTipo(string labelUsuario);
 string tipoCodIntermediario(TIPO tipo);
+bool tipoPodeSerAtribuido(TIPO tipoA, TIPO tipoB);
+string tipoParaString(TIPO tipo);
 
 // Variáveis
 int var_temp_qnt; // Contador de variáveis temporárias
@@ -61,14 +63,20 @@ queue<TIPO> tipoDosTemporarios; // O tipo de cada variável temporária; Está e
 // Macros
 #define tmpVarPrefix "tmp"
 #define varPrefix "var"
+#define BOOL_TRUE 1 // Funciona pois no cod. intermediário o bool é um inteiro; Considerar 1 como true
+#define BOOL_FALSE 0 // Funciona pois no cod. intermediário o bool é um inteiro; Considerar 0 como false
 
 %}
 
+/* TOKENS PARA OS DIFERENTES TIPOS GRAMATICAIS */
 %token TK_NUM
 %token TK_ID
 %token TK_TIPO
 %token TK_VAR
 
+/* OBS: Cada novo tipo adicionado, deve-se criar um token desses e alterar o yylval.tipo para o token correspondente no lexer  */
+/* 		É também necessário, para cada tipo novo, alterar: tipoCodIntermediario, tipoParaString e tipoPodeSerAtribuido 	*/
+/* TOKEN PARA OS TIPOS DIFERENTES */
 %token TIPO_INT
 %token TIPO_FLOAT
 %token TIPO_CHAR
@@ -98,7 +106,7 @@ OUTPUT:
 		{			 
 			TIPO tipoVar = tipoDosTemporarios.front();			
 			// TODO: No futuro, verificar se esse tipo pode descrito facilmente assim no cod. intermediário
-			codigo_gerado += "\t" + tipoCodIntermediario(tipoVar) + " " + tmpVarPrefix + to_string(i) + ";\n";			
+			codigo_gerado += "\t" + tipoCodIntermediario(tipoVar) + " " + tmpVarPrefix + to_string(i) + ";" + " // " + tipoParaString(tipoVar) + "\n";			
 
 			tipoDosTemporarios.pop();
 			i++;
@@ -112,9 +120,7 @@ OUTPUT:
 
 			codigo_gerado += "\t// " + labelVar + ":\n";
 			// TODO: No futuro, verificar se esse tipo pode descrito facilmente assim no cod. intermediário
-			codigo_gerado += "\t" + tipoCodIntermediario(s->tipoDeclarado) + " " + s->labelReal + ";" + " // " + labelVar + "\n";
-
-			codigo_gerado += "\n"; // Espaçamento entre variáveis
+			codigo_gerado += "\t" + tipoCodIntermediario(s->tipoDeclarado) + " " + s->labelReal + ";" + " // " + tipoParaString(s->tipoDeclarado) + " " + labelVar + "\n";
 
 			ordemDeclaracaoSimbolos.pop();
 		}
@@ -191,10 +197,7 @@ EXPRESSAO:
 		$$.traducao = $2.traducao;
 	}
 	| EXPRESSAO '+' EXPRESSAO
-	{
-		// TODO: remover depois; só para debug
-		printf("Tipo de E1: %d (%s), Tipo de E2: %d (%s)\n", $1.tipo, tipoCodIntermediario($1.tipo).c_str(), $3.tipo, tipoCodIntermediario($3.tipo).c_str());
-
+	{		
 		if ((($1.tipo == TIPO_INT) && ($3.tipo == TIPO_INT)) || (($1.tipo == TIPO_FLOAT) && ($3.tipo == TIPO_FLOAT)))
 		{
 			// Tipos de numeros iguais
@@ -204,9 +207,8 @@ EXPRESSAO:
 				" = " + $1.label + " + " + $3.label + ";\n";
 		} 
 		else
-		{
-			// TODO: Explicar que não pode-se realizar essa operação com os tipos de Expressão 1 e Expressão 2
-			semanticError("Expressao invalida!");
+		{			
+			semanticError("Expressao invalida -> o operador '+' não pode ser aplicado entre os tipos " + tipoParaString($1.tipo) + " e " + tipoParaString($3.tipo));
 			YYABORT;
 		}
 	}
@@ -221,9 +223,8 @@ EXPRESSAO:
 				" = " + $1.label + " - " + $3.label + ";\n";
 		} 
 		else
-		{
-			// TODO: Explicar que não pode-se realizar essa operação com os tipos de Expressão 1 e Expressão 2
-			semanticError("Expressao invalida!");
+		{			
+			semanticError("Expressao invalida -> o operador '-' não pode ser aplicado entre os tipos " + tipoParaString($1.tipo) + " e " + tipoParaString($3.tipo));
 			YYABORT;
 		}
 	}
@@ -240,7 +241,7 @@ EXPRESSAO:
 		else
 		{
 			// TODO: Explicar que não pode-se realizar essa operação com os tipos de Expressão 1 e Expressão 2
-			semanticError("Expressao invalida!");
+			semanticError("Expressao invalida -> o operador '*' não pode ser aplicado entre os tipos " + tipoParaString($1.tipo) + " e " + tipoParaString($3.tipo));
 			YYABORT;
 		}		
 	}
@@ -257,7 +258,7 @@ EXPRESSAO:
 		else
 		{
 			// TODO: Explicar que não pode-se realizar essa operação com os tipos de Expressão 1 e Expressão 2
-			semanticError("Expressao invalida!");
+			semanticError("Expressao invalida -> o operador '/' não pode ser aplicado entre os tipos " + tipoParaString($1.tipo) + " e " + tipoParaString($3.tipo));
 			YYABORT;
 		}
 	}		
@@ -267,46 +268,57 @@ ATRIBUICAO:
 	TK_ID '=' EXPRESSAO
 	{		
 		// Se a variável já foi declarada, apenas altera seu valor; 
-		// Se a variável não era inicializada ainda, agora ela é;
-		// TODO: Deve-se verificar se é possível que a expressão daquele tipo pode ser atribuido à uma variável do tipo do ID
+		// Se a variável não era inicializada ainda, agora ela é;		
+		if (!tipoPodeSerAtribuido(varTipo($1.label), $3.tipo))
+		{
+			semanticError("Erro de tipo -> A expressão de tipo '" + tipoParaString($3.tipo) + "' não é do tipo esperado (" + tipoParaString(varTipo($1.label)) + ").");
+			YYABORT;
+		}
+
 		$$.label = $1.label;
 		$$.traducao = $3.traducao + "\t" + varNomeReal($1.label) + " = " + $3.label + ";" + " // " + $1.label + "\n";
 
 		Simbolo* s = tabelaSimbolos[$1.label];
-		s->simboloInicializado = true;
-		// TODO: Rever esse linha de código abaixo
+		s->simboloInicializado = true;		
 	}
 	|
 	DECLARACAO '=' EXPRESSAO
 	{
+		// OBS: Declaração com inicialização; Em declaração a variável já é declarada corretamente; Aqui basta adicionar o valor da expressão se for do mesmo tipo e
+		// 		adicionar uma tradução para esse nó
+		if (!tipoPodeSerAtribuido(varTipo($1.label), $3.tipo))
+		{
+			semanticError("Erro de tipo -> Uma expressão de tipo '" + tipoParaString($3.tipo) + "' não pode ser usada para inicializar uma variável do tipo '" + tipoParaString(varTipo($1.label)) + "'.");
+			YYABORT;
+		}
 
 		$$.label = $1.label;
 		$$.traducao = $3.traducao + "\t" + varNomeReal($1.label) + " = " + $3.label + ";" + " // " + $1.label + "\n";
 
 		Simbolo* s = tabelaSimbolos[$1.label];
 		s->simboloInicializado = true;
-
 	}
 	|
 	TK_VAR TK_ID '=' EXPRESSAO
 	{
+		// OBS: Declaração implícita por inferência
 		if (varExiste($2.label))
 		{
 			semanticError("Simbolo ja declarado -> '" + $2.label + "'. Nao e possivel declarar novamente, escolha outro nome.");
 			YYABORT;
 		}
-			// TODO: Isso seria uma declaração implícita por inferência; Deve-se mover isso para declaração em um futuro próximo
-			// OBS: deve existir um "var" antes na regra da grámatica 
+		else
+		{
+			$$.label = $2.label;			
 
-			$$.label = $2.label;
-			
 			Simbolo* s = novaVar($4.tipo);
-			s->simboloInicializado = true;
+			s->simboloInicializado = true;			
 
 			tabelaSimbolos[$2.label] = s;						
 			ordemDeclaracaoSimbolos.push($2.label);
-
+			
 			$$.traducao = $4.traducao + "\t" + varNomeReal($2.label) + " = " + $4.label + ";" + " // " + $2.label + "\n";
+		}
 	}
 ;
 
@@ -322,9 +334,6 @@ DECLARACAO:
 		{
 			$$.label = $2.label;
 			$$.traducao = "";
-
-			// TODO: Remover depois; apenas para debug
-			printf("Nova variável, de label %s e de tipo %d (%s)\n", $2.label.c_str(), $1.tipo, tipoCodIntermediario($1.tipo).c_str());
 
 			Simbolo* s = novaVar($1.tipo);
 
@@ -355,13 +364,16 @@ string novaVarTemp(TIPO tipo)
 	return nome;
 }
 
-// Cria uma nova variável 
+// Cria uma nova variável de usuário
 Simbolo* novaVar(TIPO tipo)
 {
 	var_qnt++;
 	Simbolo* s = new Simbolo;
+
 	s->labelReal = varPrefix + to_string(var_qnt);
 	s->tipoDeclarado = tipo;
+	s->simboloInicializado = false;
+
 	return s;
 }
 
@@ -419,6 +431,40 @@ string tipoCodIntermediario(TIPO tipo)
 			break;
 	}
 	return "";
+}
+
+// Retorna, dado um tipo, qual é a string correspondente do nome daquele tipo.
+// OBS: É diferente do tipo usado para representar esse tipo no código intermediário
+// OBS²: Não verifica se o tipo passado é válido
+string tipoParaString(TIPO tipo)
+{
+	switch (tipo)
+	{
+		case TIPO_INT:
+			return "int";
+			break;
+		case TIPO_BOOL:
+			return "bool";
+			break;
+		case TIPO_FLOAT:
+			return "float";
+			break;
+		case TIPO_CHAR:
+			return "char";
+			break;
+	}
+	return "unknown";
+}
+
+// Retorna, dado um tipo A, se tipo B pode ser atribuído à tipo A.
+// TODO: No futuro, isso deve ser alterado para funcionar com conversões implícitas; No momento apenas verifica se dois tipos são iguais
+bool tipoPodeSerAtribuido(TIPO tipoA, TIPO tipoB)
+{
+	if (tipoA == tipoB)
+	{
+		return true;
+	}
+	return false;
 }
 
 // Usado pelo bison para mostrar erros sintáticos

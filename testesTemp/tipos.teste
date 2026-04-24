@@ -1,0 +1,17 @@
+int a;
+int b = 10;
+
+float c;
+float d = 10.0;
+
+char e;
+char f = 'f';
+
+bool g;
+bool h = true;
+bool i = false;
+
+var imp1 = 10;
+var imp2 = 10.0;
+var imp3 = 'H';
+var imp4 = false;
