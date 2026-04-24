@@ -9,8 +9,9 @@
 
 using namespace std;
 
-extern FILE* yyin; // yyin é o arquivo de entrada do flex; ao alterar, é possível redirecionar o fluxo
+extern FILE* yyin; // yyin é o arquivo de entrada do flex; ao alterar, é possível redirecionar o fluxo da entrada do código fonte
 #define YYSTYPE atributos // YYSTYPE é o tipo de valor usado para cada token da árvore sintática; É diferente do valor numérico gerador por %token
+#define TIPO int // É um macro para diferenciar o tipo da variável; É possível usar os tokens de tipo (%token TIPO_...) pq os dois são int no fim
 
 // Structs
 // TODO: Criar estruturas melhores para identificar os Tokens
@@ -18,32 +19,31 @@ struct atributos
 {
 	string label; // "Endereço" dessa variável; O nome da variável que carrega o valor dessa árvore sintática
 	string traducao; // A tradução dessa árvore sintática para o código intermediário
-	string tipo;	// Tipo do token
+	TIPO tipo;	// Tipo do token
 };
 
 struct Simbolo
 {	
 	// Informações sobre o Simbolo
-	string labelReal;	
-	// TODO: Guardar o tipo do token aqui	
+	string labelReal;	// O nome "verdadeiro" da variável no código intermediário;
+	// TODO: Talvez seja melhor renomear essa var para somente "tipo"? já que em atributos também é somente tipo, ou fazer o contrário
+	TIPO tipoDeclarado; // Tipo que foi declarado a variavel.
 
 	// Informações sobre a declaração
-	bool simboloInicializado; // Se esse símbolo já foi inicializado com algum valor; Caso contrário, não pode ser usado
-	string tipoDeclarado; // Tipo que foi declarado a variavel.
-	string labelValorDeclaracao; // O label da variável temporária usada para guardar o valor de declaração dessa variável
-	string valorDeclaracaoTraducao; // A tradução da expressão que foi usada para declarar esse símbolo
+	bool simboloInicializado; // Se esse símbolo já foi inicializado com algum valor; Caso contrário, não pode ser usado		
 };
 
 // Declarações de funções
 int yylex(void);
 void yyerror(string);
 void semanticError(string MSG);
-string novaVarTemp(string tipo);
-Simbolo* novaVar(string tipo);
+string novaVarTemp(TIPO tipo);
+Simbolo* novaVar(TIPO tipo);
 bool varExiste(string labelUsuario);
 bool varInicializada(string labelUsuario);
 string varNomeReal(string labelUsuario);
-string varTipo(string labelUsuario);
+TIPO varTipo(string labelUsuario);
+string tipoCodIntermediario(TIPO tipo);
 
 // Variáveis
 int var_temp_qnt; // Contador de variáveis temporárias
@@ -56,8 +56,7 @@ string codigo_gerado; // Código intermediário gerado pelo compilador
 unordered_map<string, Simbolo*> tabelaSimbolos; // Tabela de símbolos
 queue<string> ordemDeclaracaoSimbolos; // A ordem de declaração dos símbolos da tabela
 
-unordered_map<string, Simbolo*> tabelaTemporarios; // Tabela de símbolos
-queue<string> ordemDeclaracaoTemporarios; // A ordem de declaração dos símbolos da tabela
+queue<TIPO> tipoDosTemporarios; // O tipo de cada variável temporária; Está em ordem de declaração
 
 // Macros
 #define tmpVarPrefix "tmp"
@@ -68,6 +67,11 @@ queue<string> ordemDeclaracaoTemporarios; // A ordem de declaração dos símbol
 %token TK_NUM
 %token TK_ID
 %token TK_TIPO
+
+%token TIPO_INT
+%token TIPO_FLOAT
+%token TIPO_CHAR
+%token TIPO_BOOL
 
 %start OUTPUT
 
@@ -88,16 +92,16 @@ OUTPUT:
 
 
 		codigo_gerado += "\t// Variaveis Temporarias\n";
-		while (!ordemDeclaracaoTemporarios.empty())
+		int i = 0;
+		while (!tipoDosTemporarios.empty())
 		{			 
-			string labelVar = ordemDeclaracaoTemporarios.front();
-			Simbolo* s = tabelaTemporarios[labelVar];
+			TIPO tipoVar = tipoDosTemporarios.front();			
+			// TODO: No futuro, verificar se esse tipo pode descrito facilmente assim no cod. intermediário
+			codigo_gerado += "\t" + tipoCodIntermediario(tipoVar) + " " + tmpVarPrefix + to_string(i) + ";\n";			
 
-			codigo_gerado += "\t" + s->tipoDeclarado + " " + s->labelReal + ";\n";
-
-			ordemDeclaracaoTemporarios.pop();
-		}
-				
+			tipoDosTemporarios.pop();
+			i++;
+		}						
 		
 		codigo_gerado += "\n\t// Variaveis Globais\n";				
 		while (!ordemDeclaracaoSimbolos.empty())
@@ -106,14 +110,8 @@ OUTPUT:
 			Simbolo* s = tabelaSimbolos[labelVar];
 
 			codigo_gerado += "\t// " + labelVar + ":\n";
-			if(!s->valorDeclaracaoTraducao.empty())
-			{
-				codigo_gerado += s->valorDeclaracaoTraducao;
-				codigo_gerado += "\t" + s->tipoDeclarado + " " + s->labelReal + " = " + s->labelValorDeclaracao + ";" + " // " + labelVar + "\n";
-			} else 
-			{
-				codigo_gerado += "\t" + s->tipoDeclarado + " " + s->labelReal + ";" + " // " + labelVar + "\n";
-			}
+			// TODO: No futuro, verificar se esse tipo pode descrito facilmente assim no cod. intermediário
+			codigo_gerado += "\t" + tipoCodIntermediario(s->tipoDeclarado) + " " + s->labelReal + ";" + " // " + labelVar + "\n";
 
 			codigo_gerado += "\n"; // Espaçamento entre variáveis
 
@@ -167,22 +165,21 @@ EXPRESSAO:
 	{
 		if (!varExiste($1.label))
 		{
-			// A variável não foi declarada ainda, erro
-			// yyerror("Símbolo não conhecido -> '" + $1.label + "'' não é conhecido. Verifique se foi declarado.");
+			// A variável não foi declarada ainda, erro			
 			semanticError("Símbolo não conhecido -> '" + $1.label + "' não é conhecido. Verifique se foi declarado.");
 			YYABORT;
 		}
 
 		if (!varInicializada($1.label))
 		{
-			// A variável não foi inicializada ainda, erro
-			// yyerror("Variável não inicializada -> '" + $1.label + "''. Não é possível usar uma variável não inicializada");
+			// A variável não foi inicializada ainda, erro			
 			semanticError("Variável não inicializada -> '" + $1.label + "'. Não é possível usar uma variável não inicializada");
 			YYABORT;
 		}
 
-		$$.label = novaVarTemp($1.tipo);
-		$$.tipo = varTipo($1.label);
+		TIPO tipoId = varTipo($1.label);
+		$$.label = novaVarTemp(tipoId);
+		$$.tipo = tipoId;
 		$$.traducao = "\t" + $$.label + " = " + varNomeReal($1.label) + ";" + " // " + $1.label + "\n";
 	}
 	|	
@@ -194,60 +191,71 @@ EXPRESSAO:
 	}
 	| EXPRESSAO '+' EXPRESSAO
 	{
-		if (((string($1.tipo) == "int") && (string($3.tipo) == "int")) || ((string($1.tipo) == "float") && (string($3.tipo) == "float")))
+		// TODO: remover depois; só para debug
+		printf("Tipo de E1: %d (%s), Tipo de E2: %d (%s)\n", $1.tipo, tipoCodIntermediario($1.tipo).c_str(), $3.tipo, tipoCodIntermediario($3.tipo).c_str());
+
+		if ((($1.tipo == TIPO_INT) && ($3.tipo == TIPO_INT)) || (($1.tipo == TIPO_FLOAT) && ($3.tipo == TIPO_FLOAT)))
 		{
 			// Tipos de numeros iguais
 			$$.label = novaVarTemp($1.tipo);
 			$$.tipo = $1.tipo;
 			$$.traducao = $1.traducao + $3.traducao + "\t" + $$.label +
 				" = " + $1.label + " + " + $3.label + ";\n";
-		} else
+		} 
+		else
 		{
+			// TODO: Explicar que não pode-se realizar essa operação com os tipos de Expressão 1 e Expressão 2
 			semanticError("Expressao invalida!");
 			YYABORT;
 		}
 	}
 	| EXPRESSAO '-' EXPRESSAO
 	{
-		if (((string($1.tipo) == "int") && (string($3.tipo) == "int")) || ((string($1.tipo) == "float") && (string($3.tipo) == "float")))
+		if ((($1.tipo == TIPO_INT) && ($3.tipo == TIPO_INT)) || (($1.tipo == TIPO_FLOAT) && ($3.tipo == TIPO_FLOAT)))
 		{
 			// Tipos de numeros iguais
 			$$.label = novaVarTemp($1.tipo);
 			$$.tipo = $1.tipo;
 			$$.traducao = $1.traducao + $3.traducao + "\t" + $$.label +
 				" = " + $1.label + " - " + $3.label + ";\n";
-		} else
+		} 
+		else
 		{
+			// TODO: Explicar que não pode-se realizar essa operação com os tipos de Expressão 1 e Expressão 2
 			semanticError("Expressao invalida!");
 			YYABORT;
 		}
 	}
 	| EXPRESSAO '*' EXPRESSAO
 	{
-		if (((string($1.tipo) == "int") && (string($3.tipo) == "int")) || ((string($1.tipo) == "float") && (string($3.tipo) == "float")))
+		if ((($1.tipo == TIPO_INT) && ($3.tipo == TIPO_INT)) || (($1.tipo == TIPO_FLOAT) && ($3.tipo == TIPO_FLOAT)))
 		{
 			// Tipos de numeros iguais
 			$$.label = novaVarTemp($1.tipo);
 			$$.tipo = $1.tipo;
 			$$.traducao = $1.traducao + $3.traducao + "\t" + $$.label +
 				" = " + $1.label + " * " + $3.label + ";\n";
-		} else
+		} 
+		else
 		{
+			// TODO: Explicar que não pode-se realizar essa operação com os tipos de Expressão 1 e Expressão 2
 			semanticError("Expressao invalida!");
 			YYABORT;
 		}		
 	}
 	| EXPRESSAO '/' EXPRESSAO
 	{
-		if (((string($1.tipo) == "int") && (string($3.tipo) == "int")) || ((string($1.tipo) == "float") && (string($3.tipo) == "float")))
+		if ((($1.tipo == TIPO_INT) && ($3.tipo == TIPO_INT)) || (($1.tipo == TIPO_FLOAT) && ($3.tipo == TIPO_FLOAT)))
 		{
 			// Tipos de numeros iguais
 			$$.label = novaVarTemp($1.tipo);
 			$$.tipo = $1.tipo;
 			$$.traducao = $1.traducao + $3.traducao + "\t" + $$.label +
 				" = " + $1.label + " / " + $3.label + ";\n";
-		} else
+		} 
+		else
 		{
+			// TODO: Explicar que não pode-se realizar essa operação com os tipos de Expressão 1 e Expressão 2
 			semanticError("Expressao invalida!");
 			YYABORT;
 		}
@@ -261,24 +269,19 @@ ATRIBUICAO:
 		{
 			// Se a variável já foi declarada, apenas altera seu valor; 
 			// Se a variável não era inicializada ainda, agora ela é;
+			// TODO: Deve-se verificar se é possível que a expressão daquele tipo pode ser atribuido à uma variável do tipo do ID
 			$$.label = $1.label;
 			$$.traducao = $3.traducao + "\t" + varNomeReal($1.label) + " = " + $3.label + ";" + " // " + $1.label + "\n";
 
 			Simbolo* s = tabelaSimbolos[$1.label];
 			s->simboloInicializado = true;
-			s->tipoDeclarado = $3.tipo;
+			// TODO: Rever esse linha de código abaixo
+			s->tipoDeclarado = $3.tipo; // OBS: Pq isso está aqui? Pq o tipo da variável é declarado de acordo com a expressão? 
 		}
 		else
 		{
-			// TODO: Isso é uma declaração implícita; Mas só funciona ainda pq não existe tipos na LP. Depois que existir, melhorar esse código para inferir o tipo da variável
-
-			/*$$.label = $1.label;
-			$$.traducao = ""; // Não tem tradução; A tradução da expressão usada para gerar essa atribuição é guardada no simbolo para depois ser criada junto com a declaração
-			
-			Simbolo* s = novaVar($3.tipo);			
-			s->valorDeclaracaoTraducao = $3.traducao;
-			s->labelValorDeclaracao = $3.label;			
-			s->simboloInicializado = true;*/
+			// TODO: Isso seria uma declaração implícita por inferência; Deve-se mover isso para declaração em um futuro próximo
+			// OBS: deve existir um "var" antes na regra da grámatica 
 
 			$$.label = $1.label;
 			
@@ -295,7 +298,7 @@ ATRIBUICAO:
 ;
 
 DECLARACAO:
-	TK_TIPO TK_ID // TODO: TEMINAR ESSA PORRA, MUITA COISA MANÉ
+	TK_TIPO TK_ID
 	{
 		if (varExiste($2.label))
 		{
@@ -307,7 +310,10 @@ DECLARACAO:
 			$$.label = $2.label;
 			$$.traducao = "";
 
-			Simbolo* s = novaVar($2.label);
+			// TODO: Remover depois; apenas para debug
+			printf("Nova variável, de label %s e de tipo %d (%s)\n", $2.label.c_str(), $1.tipo, tipoCodIntermediario($1.tipo).c_str());
+
+			Simbolo* s = novaVar($1.tipo);
 
 			tabelaSimbolos[$2.label] = s;
 			ordemDeclaracaoSimbolos.push($2.label);
@@ -323,22 +329,21 @@ DECLARACAO:
 int yyparse();
 
 // Cria um novo identificador para uma variável temporária
-string novaVarTemp(string tipo)
+string novaVarTemp(TIPO tipo)
 {
 	string nome = tmpVarPrefix + to_string(var_temp_qnt++);
 
 	Simbolo* s = new Simbolo;
 	s->labelReal = nome;
-	s->tipoDeclarado = tipo;
+	s->tipoDeclarado = tipo;		
 
-	tabelaTemporarios[nome] = s;
-	ordemDeclaracaoTemporarios.push(nome);
+	tipoDosTemporarios.push(tipo);
 
 	return nome;
 }
 
-// TODO: Depois passar o tipo dessa variável.
-Simbolo* novaVar(string tipo)
+// Cria uma nova variável 
+Simbolo* novaVar(TIPO tipo)
 {
 	var_qnt++;
 	Simbolo* s = new Simbolo;
@@ -373,11 +378,34 @@ string varNomeReal(string labelUsuario)
 	return s->labelReal;
 }
 
-//Usado para ver tipo do simbolo. OBS: Não verifica se o símbolo existe ou não
-string varTipo(string labelUsuario)
+// Usado para ver tipo do simbolo. 
+// OBS: Não verifica se o símbolo existe ou não
+TIPO varTipo(string labelUsuario)
 {
 	Simbolo* s = tabelaSimbolos[labelUsuario];
 	return s->tipoDeclarado;
+}
+
+// Retorna, dado um tipo, qual é a string para declarar aquele tipo no código intermediário
+// OBS: Não verifica se é possível declarar diretamente aquele tipo no código intermediário.
+string tipoCodIntermediario(TIPO tipo)
+{
+	switch (tipo)
+	{
+		case TIPO_INT:
+			return "int";
+			break;
+		case TIPO_BOOL:
+			return "int";
+			break;
+		case TIPO_FLOAT:
+			return "float";
+			break;
+		case TIPO_CHAR:
+			return "char";
+			break;
+	}
+	return "";
 }
 
 // Usado pelo bison para mostrar erros sintáticos

@@ -1,3 +1,5 @@
-a = false;
-bool b;
-b = a;
+float a;                                  
+int b;
+a = 10.0;
+b = 2;
+c = a + b;

@@ -13,7 +13,6 @@ LETRA [a-zA-Z_]
 CARACTER ([^\'\\\n]|\\.)
 
 DELIM {ESPACO}+
-TIPO (int|float|char|bool)
 CHAR \'{CARACTER}\'
 BOOL (true|false)
 INT {DIGITO}+
@@ -28,11 +27,14 @@ ID {LETRA}({DIGITO}|{LETRA})*
 [+-/*]		{ coluna++; return *yytext; }
 [()]        { coluna++; return *yytext; }
 [;]         { coluna++; return *yytext; }
-{TIPO}      { coluna += strlen(yytext); yylval.label = yytext; return TK_TIPO; }
-{INT}		{ coluna += strlen(yytext); yylval.label = yytext; yylval.tipo = "int"; return TK_NUM; }
-{FLOAT}		{ coluna += strlen(yytext); yylval.label = yytext; yylval.tipo = "float"; return TK_NUM; }
-{CHAR}		{ coluna += strlen(yytext); yylval.label = yytext; yylval.tipo = "char"; return TK_NUM; }
-{BOOL}		{ coluna += strlen(yytext); yylval.label = yytext; yylval.tipo = "bool"; return TK_NUM; }
+"int"       { coluna += strlen(yytext); yylval.label = yytext; yylval.tipo = TIPO_INT; return TK_TIPO; }
+"float"       { coluna += strlen(yytext); yylval.label = yytext; yylval.tipo = TIPO_FLOAT; return TK_TIPO; }
+"char"       { coluna += strlen(yytext); yylval.label = yytext; yylval.tipo = TIPO_CHAR; return TK_TIPO; }
+"bool"       { coluna += strlen(yytext); yylval.label = yytext; yylval.tipo = TIPO_BOOL; return TK_TIPO; }
+{INT}		{ coluna += strlen(yytext); yylval.label = yytext; yylval.tipo = TIPO_INT; return TK_NUM; }
+{FLOAT}		{ coluna += strlen(yytext); yylval.label = yytext; yylval.tipo = TIPO_FLOAT; return TK_NUM; }
+{CHAR}		{ coluna += strlen(yytext); yylval.label = yytext; yylval.tipo = TIPO_CHAR; return TK_NUM; }
+{BOOL}		{ coluna += strlen(yytext); yylval.label = yytext; yylval.tipo = TIPO_BOOL; return TK_NUM; }
 {ID}        { coluna += strlen(yytext); yylval.label = yytext; return TK_ID; }
 .			{ coluna += strlen(yytext); fprintf(stderr, "Erro Léxico: Caracteres não reconhecido '%s', em Linha: %d, Coluna: %d \n", yytext, linha, coluna); }
 
