@@ -1,5 +1,4 @@
-float a;                                  
+int a = 2;
 int b;
-a = 10.0;
-b = 2;
-c = a + b;
+var c = 2 + a;
+b = 2 + c;

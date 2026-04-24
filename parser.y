@@ -67,6 +67,7 @@ queue<TIPO> tipoDosTemporarios; // O tipo de cada variável temporária; Está e
 %token TK_NUM
 %token TK_ID
 %token TK_TIPO
+%token TK_VAR
 
 %token TIPO_INT
 %token TIPO_FLOAT
@@ -265,35 +266,47 @@ EXPRESSAO:
 ATRIBUICAO:
 	TK_ID '=' EXPRESSAO
 	{		
-		if (varExiste($1.label))
-		{
-			// Se a variável já foi declarada, apenas altera seu valor; 
-			// Se a variável não era inicializada ainda, agora ela é;
-			// TODO: Deve-se verificar se é possível que a expressão daquele tipo pode ser atribuido à uma variável do tipo do ID
-			$$.label = $1.label;
-			$$.traducao = $3.traducao + "\t" + varNomeReal($1.label) + " = " + $3.label + ";" + " // " + $1.label + "\n";
+		// Se a variável já foi declarada, apenas altera seu valor; 
+		// Se a variável não era inicializada ainda, agora ela é;
+		// TODO: Deve-se verificar se é possível que a expressão daquele tipo pode ser atribuido à uma variável do tipo do ID
+		$$.label = $1.label;
+		$$.traducao = $3.traducao + "\t" + varNomeReal($1.label) + " = " + $3.label + ";" + " // " + $1.label + "\n";
 
-			Simbolo* s = tabelaSimbolos[$1.label];
-			s->simboloInicializado = true;
-			// TODO: Rever esse linha de código abaixo
-			s->tipoDeclarado = $3.tipo; // OBS: Pq isso está aqui? Pq o tipo da variável é declarado de acordo com a expressão? 
-		}
-		else
+		Simbolo* s = tabelaSimbolos[$1.label];
+		s->simboloInicializado = true;
+		// TODO: Rever esse linha de código abaixo
+	}
+	|
+	DECLARACAO '=' EXPRESSAO
+	{
+
+		$$.label = $1.label;
+		$$.traducao = $3.traducao + "\t" + varNomeReal($1.label) + " = " + $3.label + ";" + " // " + $1.label + "\n";
+
+		Simbolo* s = tabelaSimbolos[$1.label];
+		s->simboloInicializado = true;
+
+	}
+	|
+	TK_VAR TK_ID '=' EXPRESSAO
+	{
+		if (varExiste($2.label))
 		{
+			semanticError("Simbolo ja declarado -> '" + $2.label + "'. Nao e possivel declarar novamente, escolha outro nome.");
+			YYABORT;
+		}
 			// TODO: Isso seria uma declaração implícita por inferência; Deve-se mover isso para declaração em um futuro próximo
 			// OBS: deve existir um "var" antes na regra da grámatica 
 
-			$$.label = $1.label;
+			$$.label = $2.label;
 			
-			Simbolo* s = novaVar($3.tipo);
+			Simbolo* s = novaVar($4.tipo);
 			s->simboloInicializado = true;
 
-			tabelaSimbolos[$1.label] = s;						
-			ordemDeclaracaoSimbolos.push($1.label);
+			tabelaSimbolos[$2.label] = s;						
+			ordemDeclaracaoSimbolos.push($2.label);
 
-			$$.traducao = $3.traducao + "\t" + varNomeReal($1.label) + " = " + $3.label + ";" + " // " + $1.label + "\n";
-
-		}
+			$$.traducao = $4.traducao + "\t" + varNomeReal($2.label) + " = " + $4.label + ";" + " // " + $2.label + "\n";
 	}
 ;
 
