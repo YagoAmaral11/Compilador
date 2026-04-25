@@ -9,7 +9,7 @@
 
 ESPACO [ \t]
 DIGITO [0-9]
-LETRA [a-zA-z_]
+LETRA [a-zA-Z_]
 CARACTER ([^\'\\\n]|\\.)
 
 DELIM {ESPACO}+
@@ -24,6 +24,15 @@ ID {LETRA}({DIGITO}|{LETRA})*
 
 "\n"		{ linha++; coluna = 0; }
 {DELIM} 	{ coluna += strlen(yytext); }
+
+/*Operadores Relacionais*/
+"=="        { coluna += 2; return yytext; }
+"!="        {coluna += 2; return yytext; }
+"<="        {coluna += 2; return yytext; }
+">="        {coluna += 2; return yytext; }
+"<"         {coluna ++; return yytext; }
+">"         {coluna ++; return yytext; }
+
 [=]         { coluna++; return *yytext; }
 [+-/*]		{ coluna++; return *yytext; }
 [()]        { coluna++; return *yytext; }

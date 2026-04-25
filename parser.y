@@ -68,10 +68,10 @@ queue<string> ordemDeclaracaoTemporarios; // A ordem de declaração dos símbol
 %token TK_NUM
 %token TK_ID
 %token TK_TIPO
-
 %start OUTPUT
 
 %right '='
+
 %left '+' '-'
 %left '*' '/'
 %left '(' ')'
