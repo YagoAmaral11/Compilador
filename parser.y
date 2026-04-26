@@ -72,8 +72,7 @@ queue<TIPO> tipoDosTemporarios; // O tipo de cada variável temporária; Está e
 %token TK_NUM
 %token TK_ID
 %token TK_TIPO
-<<<<<<< HEAD
-=======
+
 %token TK_VAR
 
 /* OBS: Cada novo tipo adicionado, deve-se criar um token desses e alterar o yylval.tipo para o token correspondente no lexer  */
@@ -84,10 +83,13 @@ queue<TIPO> tipoDosTemporarios; // O tipo de cada variável temporária; Está e
 %token TIPO_CHAR
 %token TIPO_BOOL
 
->>>>>>> main
+
 %start OUTPUT
 
 %right '='
+/*Operadores relacionais*/
+%left OP_DIFERENTE OP_IGUAL
+%left OP_MENOR OP_MAIOR OP_MENOR_IGUAL OP_MAIOR_IGUAL
 
 %left '+' '-'
 %left '*' '/'
@@ -265,7 +267,98 @@ EXPRESSAO:
 			semanticError("Expressao invalida -> o operador '/' não pode ser aplicado entre os tipos " + tipoParaString($1.tipo) + " e " + tipoParaString($3.tipo));
 			YYABORT;
 		}
-	}		
+	}	
+	|	EXPRESSAO OP_MAIOR EXPRESSAO
+	{
+		if(($1.tipo == TIPO_INT) && ($3.tipo == TIPO_INT) || (($1.tipo == TIPO_FLOAT) && ($3.tipo == TIPO_FLOAT)))
+		{
+			$$.label = novaVarTemp(TIPO_BOOL);
+			$$.tipo = TIPO_BOOL;
+			$$.traducao = $1.traducao + $3.traducao + "\t" + $$.label +
+				" = " + $1.label + " > " + $3.label + ";\n";
+		}
+		else
+		{
+			semanticError("Expressao invalida -> o operador '>' não pode ser aplicado entre os tipos " + tipoParaString($1.tipo) + " e " + tipoParaString($3.tipo));
+			YYABORT;
+		}
+	}
+	|	EXPRESSAO OP_MENOR EXPRESSAO
+	{
+		if(($1.tipo == TIPO_INT) && ($3.tipo == TIPO_INT) || (($1.tipo == TIPO_FLOAT) && ($3.tipo == TIPO_FLOAT)))
+		{
+			$$.label = novaVarTemp(TIPO_BOOL);
+			$$.tipo = TIPO_BOOL;
+			$$.traducao = $1.traducao + $3.traducao + "\t" + $$.label +
+				" = " + $1.label + " < " + $3.label + ";\n";
+		}
+		else
+		{
+			semanticError("Expressao invalida -> o operador '<' não pode ser aplicado entre os tipos " + tipoParaString($1.tipo) + " e " + tipoParaString($3.tipo));
+			YYABORT;
+		}
+	}
+	| EXPRESSAO OP_IGUAL EXPRESSAO
+	{
+		if(($1.tipo == TIPO_INT) && ($3.tipo == TIPO_INT) || (($1.tipo == TIPO_FLOAT) && ($3.tipo == TIPO_FLOAT)))
+		{
+			$$.label = novaVarTemp(TIPO_BOOL);
+			$$.tipo = TIPO_BOOL;
+			$$.traducao = $1.traducao + $3.traducao + "\t" + $$.label +
+				" = " + $1.label + " == " + $3.label + ";\n";
+		}
+		else
+		{
+			semanticError("Expressao invalida -> o operador '==' não pode ser aplicado entre os tipos " + tipoParaString($1.tipo) + " e " + tipoParaString($3.tipo));
+			YYABORT;
+		}
+	}
+	| EXPRESSAO OP_DIFERENTE EXPRESSAO
+	{
+		if(($1.tipo == TIPO_INT) && ($3.tipo == TIPO_INT) || (($1.tipo == TIPO_FLOAT) && ($3.tipo == TIPO_FLOAT)))
+		{
+			$$.label = novaVarTemp(TIPO_BOOL);
+			$$.tipo = TIPO_BOOL;
+			$$.traducao = $1.traducao + $3.traducao + "\t" + $$.label +
+				" = " + $1.label + " != " + $3.label + ";\n";
+		}
+		else
+		{
+			semanticError("Expressao invalida -> o operador '!=' não pode ser aplicado entre os tipos " + tipoParaString($1.tipo) + " e " + tipoParaString($3.tipo));
+			YYABORT;
+		}
+	}
+	|	EXPRESSAO OP_MENOR_IGUAL EXPRESSAO
+	{
+		if(($1.tipo == TIPO_INT) && ($3.tipo == TIPO_INT) || (($1.tipo == TIPO_FLOAT) && ($3.tipo == TIPO_FLOAT)))
+		{
+			$$.label = novaVarTemp(TIPO_BOOL);
+			$$.tipo = TIPO_BOOL;
+			$$.traducao = $1.traducao + $3.traducao + "\t" + $$.label +
+				" = " + $1.label + " <= " + $3.label + ";\n";
+		}
+		else
+		{
+			semanticError("Expressao invalida -> o operador '<=' não pode ser aplicado entre os tipos " + tipoParaString($1.tipo) + " e " + tipoParaString($3.tipo));
+			YYABORT;
+		}
+	}
+	|	EXPRESSAO OP_MAIOR_IGUAL EXPRESSAO
+	{
+		if(($1.tipo == TIPO_INT) && ($3.tipo == TIPO_INT) || (($1.tipo == TIPO_FLOAT) && ($3.tipo == TIPO_FLOAT)))
+		{
+			$$.label = novaVarTemp(TIPO_BOOL);
+			$$.tipo = TIPO_BOOL;
+			$$.traducao = $1.traducao + $3.traducao + "\t" + $$.label +
+				" = " + $1.label + " >= " + $3.label + ";\n";
+		}
+		else
+		{
+			semanticError("Expressao invalida -> o operador '>=' não pode ser aplicado entre os tipos " + tipoParaString($1.tipo) + " e " + tipoParaString($3.tipo));
+			YYABORT;
+		}
+	}
+	
 ;
 
 ATRIBUICAO:
