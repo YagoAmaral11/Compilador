@@ -1,0 +1,3 @@
+var b = 10;
+float c = 10.5 + b;
+float e = 2 + c;

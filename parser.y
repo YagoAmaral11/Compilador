@@ -6,6 +6,7 @@
 #include <string>
 #include <locale>
 #include <cstdlib>
+#include <utility>
 
 using namespace std;
 
@@ -33,6 +34,34 @@ struct Simbolo
 	bool simboloInicializado; // Se esse símbolo já foi inicializado com algum valor; Caso contrário, não pode ser usado		
 };
 
+// Usado para definir qual tipo de conversão um tipo pode ter
+enum class TipoDeConversao
+{
+	Nenhuma,
+	Explicita,
+	Implicita
+};
+
+// Usado na tabela de conversões para ditar informações sobre as conversões
+struct ConversaoInfo
+{
+	TipoDeConversao tipo;	
+};
+
+// Usado na tabela de conversão para gerar uma hash para um pair<T1,T2>, para que seja possível
+// usar pair<TIPO, TIPO> como chave
+struct pair_hash 
+{
+    template <class T1, class T2>
+    std::size_t operator()(const std::pair<T1, T2>& p) const 
+	{
+        auto h1 = std::hash<T1>{}(p.first);
+        auto h2 = std::hash<T2>{}(p.second);
+        // Combinação simples dos hashes
+        return h1 ^ (h2 << 1);
+    }
+};
+
 // Declarações de funções
 int yylex(void);
 void yyerror(string);
@@ -46,6 +75,10 @@ TIPO varTipo(string labelUsuario);
 string tipoCodIntermediario(TIPO tipo);
 bool tipoPodeSerAtribuido(TIPO tipoA, TIPO tipoB);
 string tipoParaString(TIPO tipo);
+void inicializarTabelaConversao();
+bool podeSerConvertidoExplicitamente(TIPO a, TIPO b);
+bool podeSerConvertidoImplicitamente(TIPO a, TIPO b);
+string ConversaoCodIntermediario(string labelA, TIPO tipoB, string& labelB);
 
 // Variáveis
 int var_temp_qnt; // Contador de variáveis temporárias
@@ -56,9 +89,14 @@ int coluna = 0; // Contador de caracteres do comando; Atualizado no lexer
 
 string codigo_gerado; // Código intermediário gerado pelo compilador
 unordered_map<string, Simbolo*> tabelaSimbolos; // Tabela de símbolos
-queue<string> ordemDeclaracaoSimbolos; // A ordem de declaração dos símbolos da tabela
-
+queue<string> ordemDeclaracaoSimbolos; // A ordem de declaração dos símbolos da tabela; TODO: Essa estrutura ainda precisa existir? Remover depois
+ 
 queue<TIPO> tipoDosTemporarios; // O tipo de cada variável temporária; Está em ordem de declaração
+
+// Tabela de conversão; Verifica se o tipo da esquerda pode se converter no tipo da direita
+// OBS: Não tem a diagonal principal (onde o tipo A == B) por simplicidade;
+// OBS²: Tipos que não estejam na tabela infere-se que não é possível realizar nenhuma conversão, i. e., tipo A não consegue se converter no tipo B
+unordered_map<pair<TIPO, TIPO>, ConversaoInfo, pair_hash> tabelaConversao; 
 
 // Macros
 #define tmpVarPrefix "tmp"
@@ -75,7 +113,7 @@ queue<TIPO> tipoDosTemporarios; // O tipo de cada variável temporária; Está e
 %token TK_VAR
 
 /* OBS: Cada novo tipo adicionado, deve-se criar um token desses e alterar o yylval.tipo para o token correspondente no lexer  */
-/* 		É também necessário, para cada tipo novo, alterar: tipoCodIntermediario, tipoParaString e tipoPodeSerAtribuido 	*/
+/* 		É também necessário, para cada tipo novo, alterar: tipoCodIntermediario, tipoParaString, tipoPodeSerAtribuido e inicializarTabelaConversao 	*/
 /* TOKEN PARA OS TIPOS DIFERENTES */
 %token TIPO_INT
 %token TIPO_FLOAT
@@ -196,8 +234,33 @@ EXPRESSAO:
 		$$.tipo = $2.tipo;
 		$$.traducao = $2.traducao;
 	}
+	| 
+	'(' TK_TIPO ')' EXPRESSAO
+	{
+		// Conversão Explícita
+		TIPO tipoExpressao = $4.tipo;		
+		TIPO novoTipo = $2.tipo;
+		string novaLabel;
+		string tradConversao;		
+
+		if (podeSerConvertidoExplicitamente(tipoExpressao, novoTipo))
+		{
+			tradConversao = ConversaoCodIntermediario($4.label, novoTipo, novaLabel);
+		}
+		else
+		{
+			semanticError("Expressão inválida -> O tipo '" + tipoParaString($4.tipo) + "' não pode ser convertido para o tipo '" + tipoParaString(novoTipo) + "'");
+			YYABORT;
+		}
+
+		$$.label = novaLabel;
+		$$.tipo = novoTipo;
+		$$.traducao = $4.traducao + "\t" + tradConversao;
+	}
 	| EXPRESSAO '+' EXPRESSAO
 	{		
+		// TODO: Depois criar uma tabela sobre qual operação pode ser feita para cada tipo de variável; Então dá para se verificar se a Expressão
+		// 		 pode ser operada com o operador
 		if ((($1.tipo == TIPO_INT) && ($3.tipo == TIPO_INT)) || (($1.tipo == TIPO_FLOAT) && ($3.tipo == TIPO_FLOAT)))
 		{
 			// Tipos de numeros iguais
@@ -206,6 +269,30 @@ EXPRESSAO:
 			$$.traducao = $1.traducao + $3.traducao + "\t" + $$.label +
 				" = " + $1.label + " + " + $3.label + ";\n";
 		} 
+		else if (($1.tipo == TIPO_INT || $1.tipo == TIPO_FLOAT) && podeSerConvertidoImplicitamente($3.tipo, $1.tipo))
+		{
+			// Tipos de números; Expressão 2 pode ser convertida no tipo de Expressão 1
+			string tradConversao;
+			string labelConversao;
+
+			tradConversao = ConversaoCodIntermediario($3.label, $1.tipo, labelConversao);
+			$$.label = novaVarTemp($1.tipo);
+			$$.tipo = $1.tipo;
+			$$.traducao = $1.traducao + $3.traducao + "\t" + tradConversao + "\t" + $$.label + " = " + $1.label + " + " 
+				+ labelConversao + ";\n";
+		}
+		else if (podeSerConvertidoImplicitamente($1.tipo, $3.tipo) && ($3.tipo == TIPO_INT || $3.tipo == TIPO_FLOAT))
+		{
+			// Tipos de números; Expressão 1 pode ser convertida no tipo de Expressão 2
+			string tradConversao;
+			string labelConversao;
+
+			tradConversao = ConversaoCodIntermediario($1.label, $3.tipo, labelConversao);
+			$$.label = novaVarTemp($3.tipo);
+			$$.tipo = $3.tipo;
+			$$.traducao = $1.traducao + $3.traducao + "\t" + tradConversao + "\t" + $$.label + " = " + labelConversao + " + "
+				+ $3.label + ";\n";
+		}
 		else
 		{			
 			semanticError("Expressao invalida -> o operador '+' não pode ser aplicado entre os tipos " + tipoParaString($1.tipo) + " e " + tipoParaString($3.tipo));
@@ -354,11 +441,6 @@ int yyparse();
 string novaVarTemp(TIPO tipo)
 {
 	string nome = tmpVarPrefix + to_string(var_temp_qnt++);
-
-	Simbolo* s = new Simbolo;
-	s->labelReal = nome;
-	s->tipoDeclarado = tipo;		
-
 	tipoDosTemporarios.push(tipo);
 
 	return nome;
@@ -457,10 +539,13 @@ string tipoParaString(TIPO tipo)
 }
 
 // Retorna, dado um tipo A, se tipo B pode ser atribuído à tipo A.
-// TODO: No futuro, isso deve ser alterado para funcionar com conversões implícitas; No momento apenas verifica se dois tipos são iguais
 bool tipoPodeSerAtribuido(TIPO tipoA, TIPO tipoB)
 {
 	if (tipoA == tipoB)
+	{
+		return true;
+	}
+	if (podeSerConvertidoImplicitamente(tipoB, tipoA))
 	{
 		return true;
 	}
@@ -480,11 +565,82 @@ void semanticError(string MSG)
 	fprintf(stderr, "Erro: \"%s\", em Linha: %d, Coluna: %d\n", MSG.c_str(), linha, coluna);
 }
 
+// Função para criar a tabela de conversão
+void inicializarTabelaConversao()
+{
+	pair<TIPO, TIPO> tipoAtual;
+	ConversaoInfo conversaoInfoAtual {TipoDeConversao::Nenhuma};		
+
+	// CONVERSÕES DE INT
+	tipoAtual = {TIPO_INT, TIPO_FLOAT};
+	conversaoInfoAtual.tipo = TipoDeConversao::Implicita;
+	tabelaConversao[tipoAtual] = conversaoInfoAtual;
+
+	// CONVERSÕES DE FLOAT
+	tipoAtual = {TIPO_FLOAT, TIPO_INT};
+	conversaoInfoAtual.tipo = TipoDeConversao::Explicita;
+	tabelaConversao[tipoAtual] = conversaoInfoAtual;
+
+	// CONVERSÕES DE BOOL
+
+	// CONVERSÕES DE CHAR
+}
+
+// Verifica se um tipo A pode ser convertido em um tipo B explicitamente
+bool podeSerConvertidoExplicitamente(TIPO a, TIPO b)
+{
+	pair<TIPO, TIPO> conv(a, b);
+
+	if (tabelaConversao.find(conv) != tabelaConversao.end())
+	{
+		ConversaoInfo info = tabelaConversao[conv];
+
+		if (info.tipo == TipoDeConversao::Implicita || info.tipo == TipoDeConversao::Explicita)
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+// Verifica se um tipo A pode ser convertido em um tipo B implicitamente
+bool podeSerConvertidoImplicitamente(TIPO a, TIPO b)
+{
+	pair<TIPO, TIPO> conv(a, b);
+
+	if (tabelaConversao.find(conv) != tabelaConversao.end())
+	{
+		ConversaoInfo info = tabelaConversao[conv];
+
+		if (info.tipo == TipoDeConversao::Implicita)
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+// Realiza uma conversão simples no código intermediário (por meio de cast no C) com label 'labelA' para uma do tipo 'B',
+// retornando o código intermediário dessa conversão e o label da variável temporário que guarda a variável convertida 'labelB'
+// OBS: Não verifica se a conversão pode ou não ser feita, apenas faz um casting no código intermediário; Para verificar, use 
+// podeSerConvertidoExplicitamente ou podeSerConvertidoImplicitamente
+string ConversaoCodIntermediario(string labelA, TIPO tipoB, string& labelB)
+{
+	string s; 
+	labelB = novaVarTemp(tipoB);
+	s = labelB + " = " + "(" + tipoCodIntermediario(tipoB) + ")" + " " + labelA + ";\n";
+	return s;
+}
+
 // Usado para inicializar as estruturas e controladores usados no compilador;
 void initialize()
 {
 	var_temp_qnt = 0;
 	var_qnt = 0;
+
+	inicializarTabelaConversao();
 }
 
 int main(int argc, char* argv[])
