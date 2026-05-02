@@ -1,0 +1,2 @@
+var b = (unknown) 10;
+float c = b + 2.5;
