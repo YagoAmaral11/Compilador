@@ -75,10 +75,14 @@ TIPO varTipo(string labelUsuario);
 string tipoCodIntermediario(TIPO tipo);
 bool tipoPodeSerAtribuido(TIPO tipoA, TIPO tipoB);
 string tipoParaString(TIPO tipo);
+bool expressaoTiposIguais(atributos exp1, atributos exp2);
 void inicializarTabelaConversao();
 bool podeSerConvertidoExplicitamente(TIPO a, TIPO b);
 bool podeSerConvertidoImplicitamente(TIPO a, TIPO b);
 string ConversaoCodIntermediario(string labelA, TIPO tipoB, string& labelB);
+bool operadorFuncionaEmTipo(int operadorOuToken, TIPO tipo);
+void inicializarTabelaDeOperadores();
+void tabelaDeOperadoresAdd(int operador, TIPO tipo);
 
 // Variáveis
 int var_temp_qnt; // Contador de variáveis temporárias
@@ -98,6 +102,11 @@ queue<TIPO> tipoDosTemporarios; // O tipo de cada variável temporária; Está e
 // OBS²: Tipos que não estejam na tabela infere-se que não é possível realizar nenhuma conversão, i. e., tipo A não consegue se converter no tipo B
 unordered_map<pair<TIPO, TIPO>, ConversaoInfo, pair_hash> tabelaConversao; 
 
+// Dado um operador (um char, um token de operador, etc.), verifica se é possível operar sobre o TIPO passado
+// OBS: Tipos que não estejam na tabela infere-se que não é possível realizar nenhuma operação, i. e., o operador passado não pode ser usado
+// OBS²: Note que essa não é uma tabela de conversões; Ela apenas verifica, para um par de variáveis de um tipo, se o operador passado pode ser usado
+unordered_map<pair<int, TIPO>, bool, pair_hash> tabelaOperadores;
+
 // Macros
 #define tmpVarPrefix "tmp"
 #define varPrefix "var"
@@ -113,7 +122,7 @@ unordered_map<pair<TIPO, TIPO>, ConversaoInfo, pair_hash> tabelaConversao;
 %token TK_VAR
 
 /* OBS: Cada novo tipo adicionado, deve-se criar um token desses e alterar o yylval.tipo para o token correspondente no lexer  */
-/* 		É também necessário, para cada tipo novo, alterar: tipoCodIntermediario, tipoParaString, tipoPodeSerAtribuido e inicializarTabelaConversao 	*/
+/* 		É também necessário, para cada tipo novo, alterar: tipoCodIntermediario, tipoParaString, inicializarTabelaConversao e inicializarTabelaDeOperadores 	*/
 /* TOKEN PARA OS TIPOS DIFERENTES */
 %token TIPO_INT
 %token TIPO_FLOAT
@@ -258,96 +267,168 @@ EXPRESSAO:
 		$$.traducao = $4.traducao + "\t" + tradConversao;
 	}
 	| EXPRESSAO '+' EXPRESSAO
-	{		
-		// TODO: Depois criar uma tabela sobre qual operação pode ser feita para cada tipo de variável; Então dá para se verificar se a Expressão
-		// 		 pode ser operada com o operador
-		if ((($1.tipo == TIPO_INT) && ($3.tipo == TIPO_INT)) || (($1.tipo == TIPO_FLOAT) && ($3.tipo == TIPO_FLOAT)))
+	{				
+		TIPO tipoFinal;
+		string tradConversão = "";
+		string labelEsq;
+		string labelDir;
+		string operadorCodInt = "+";
+		int operador = '+';
+
+		if (expressaoTiposIguais($1, $3) && operadorFuncionaEmTipo(operador, $1.tipo))
 		{
-			// Tipos de numeros iguais
-			$$.label = novaVarTemp($1.tipo);
-			$$.tipo = $1.tipo;
-			$$.traducao = $1.traducao + $3.traducao + "\t" + $$.label +
-				" = " + $1.label + " + " + $3.label + ";\n";
+			tipoFinal = $1.tipo;
+			labelEsq = $1.label;
+			labelDir = $3.label;
 		} 
-		else if (($1.tipo == TIPO_INT || $1.tipo == TIPO_FLOAT) && podeSerConvertidoImplicitamente($3.tipo, $1.tipo))
+		else if (operadorFuncionaEmTipo(operador, $1.tipo) && podeSerConvertidoImplicitamente($3.tipo, $1.tipo))
 		{
-			// Tipos de números; Expressão 2 pode ser convertida no tipo de Expressão 1
-			string tradConversao;
-			string labelConversao;
-
-			tradConversao = ConversaoCodIntermediario($3.label, $1.tipo, labelConversao);
-			$$.label = novaVarTemp($1.tipo);
-			$$.tipo = $1.tipo;
-			$$.traducao = $1.traducao + $3.traducao + "\t" + tradConversao + "\t" + $$.label + " = " + $1.label + " + " 
-				+ labelConversao + ";\n";
+			// Expressão 2 pode ser convertida no tipo de Expressão 1
+			tipoFinal = $1.tipo;
+			labelEsq = $1.label;
+			tradConversão = ConversaoCodIntermediario($3.label, $1.tipo, labelDir) + "\t";
 		}
-		else if (podeSerConvertidoImplicitamente($1.tipo, $3.tipo) && ($3.tipo == TIPO_INT || $3.tipo == TIPO_FLOAT))
+		else if (podeSerConvertidoImplicitamente($1.tipo, $3.tipo) && operadorFuncionaEmTipo(operador, $3.tipo))
 		{
-			// Tipos de números; Expressão 1 pode ser convertida no tipo de Expressão 2
-			string tradConversao;
-			string labelConversao;
-
-			tradConversao = ConversaoCodIntermediario($1.label, $3.tipo, labelConversao);
-			$$.label = novaVarTemp($3.tipo);
-			$$.tipo = $3.tipo;
-			$$.traducao = $1.traducao + $3.traducao + "\t" + tradConversao + "\t" + $$.label + " = " + labelConversao + " + "
-				+ $3.label + ";\n";
-		}
+			// Expressão 1 pode ser convertida no tipo de Expressão 2
+			tipoFinal = $3.tipo;
+			tradConversão = ConversaoCodIntermediario($1.label, $3.tipo, labelEsq) + "\t";
+			labelDir = $3.label;
+		}	
 		else
-		{			
-			semanticError("Expressao invalida -> o operador '+' não pode ser aplicado entre os tipos " + tipoParaString($1.tipo) + " e " + tipoParaString($3.tipo));
+		{				
+			// Quando não é possível realizar nenhuma conversão implícita, os tipos não sou iguais ou não é possível operar sobre esse tipo
+			semanticError("Expressao invalida -> o operador '" + operadorCodInt + "' não pode ser aplicado entre os tipos " + tipoParaString($1.tipo) + " e " + tipoParaString($3.tipo));
 			YYABORT;
-		}
+		}		
+
+		$$.label = novaVarTemp(tipoFinal);
+		$$.tipo = tipoFinal;
+		$$.traducao = $1.traducao + $3.traducao + "\t" + tradConversão + $$.label + " = " + labelEsq + " " + operadorCodInt + " " + labelDir + ";\n";
+
 	}
 	| EXPRESSAO '-' EXPRESSAO
 	{
-		if ((($1.tipo == TIPO_INT) && ($3.tipo == TIPO_INT)) || (($1.tipo == TIPO_FLOAT) && ($3.tipo == TIPO_FLOAT)))
+		TIPO tipoFinal;
+		string tradConversão = "";
+		string labelEsq;
+		string labelDir;
+		string operadorCodInt = "-";
+		int operador = '-';
+
+		if (expressaoTiposIguais($1, $3) && operadorFuncionaEmTipo(operador, $1.tipo))
 		{
-			// Tipos de numeros iguais
-			$$.label = novaVarTemp($1.tipo);
-			$$.tipo = $1.tipo;
-			$$.traducao = $1.traducao + $3.traducao + "\t" + $$.label +
-				" = " + $1.label + " - " + $3.label + ";\n";
+			tipoFinal = $1.tipo;
+			labelEsq = $1.label;
+			labelDir = $3.label;
 		} 
-		else
-		{			
-			semanticError("Expressao invalida -> o operador '-' não pode ser aplicado entre os tipos " + tipoParaString($1.tipo) + " e " + tipoParaString($3.tipo));
-			YYABORT;
+		else if (operadorFuncionaEmTipo(operador, $1.tipo) && podeSerConvertidoImplicitamente($3.tipo, $1.tipo))
+		{
+			// Expressão 2 pode ser convertida no tipo de Expressão 1
+			tipoFinal = $1.tipo;
+			labelEsq = $1.label;
+			tradConversão = ConversaoCodIntermediario($3.label, $1.tipo, labelDir) + "\t";
 		}
+		else if (podeSerConvertidoImplicitamente($1.tipo, $3.tipo) && operadorFuncionaEmTipo(operador, $3.tipo))
+		{
+			// Expressão 1 pode ser convertida no tipo de Expressão 2
+			tipoFinal = $3.tipo;
+			tradConversão = ConversaoCodIntermediario($1.label, $3.tipo, labelEsq) + "\t";
+			labelDir = $3.label;
+		}	
+		else
+		{				
+			// Quando não é possível realizar nenhuma conversão implícita, os tipos não sou iguais ou não é possível operar sobre esse tipo
+			semanticError("Expressao invalida -> o operador '" + operadorCodInt + "' não pode ser aplicado entre os tipos " + tipoParaString($1.tipo) + " e " + tipoParaString($3.tipo));
+			YYABORT;
+		}		
+
+		$$.label = novaVarTemp(tipoFinal);
+		$$.tipo = tipoFinal;
+		$$.traducao = $1.traducao + $3.traducao + "\t" + tradConversão + $$.label + " = " + labelEsq + " " + operadorCodInt + " " + labelDir + ";\n";
+		
 	}
 	| EXPRESSAO '*' EXPRESSAO
 	{
-		if ((($1.tipo == TIPO_INT) && ($3.tipo == TIPO_INT)) || (($1.tipo == TIPO_FLOAT) && ($3.tipo == TIPO_FLOAT)))
+		TIPO tipoFinal;
+		string tradConversão = "";
+		string labelEsq;
+		string labelDir;
+		string operadorCodInt = "*";
+		int operador = '*';
+
+		if (expressaoTiposIguais($1, $3) && operadorFuncionaEmTipo(operador, $1.tipo))
 		{
-			// Tipos de numeros iguais
-			$$.label = novaVarTemp($1.tipo);
-			$$.tipo = $1.tipo;
-			$$.traducao = $1.traducao + $3.traducao + "\t" + $$.label +
-				" = " + $1.label + " * " + $3.label + ";\n";
+			tipoFinal = $1.tipo;
+			labelEsq = $1.label;
+			labelDir = $3.label;
 		} 
-		else
+		else if (operadorFuncionaEmTipo(operador, $1.tipo) && podeSerConvertidoImplicitamente($3.tipo, $1.tipo))
 		{
-			// TODO: Explicar que não pode-se realizar essa operação com os tipos de Expressão 1 e Expressão 2
-			semanticError("Expressao invalida -> o operador '*' não pode ser aplicado entre os tipos " + tipoParaString($1.tipo) + " e " + tipoParaString($3.tipo));
+			// Expressão 2 pode ser convertida no tipo de Expressão 1
+			tipoFinal = $1.tipo;
+			labelEsq = $1.label;
+			tradConversão = ConversaoCodIntermediario($3.label, $1.tipo, labelDir) + "\t";
+		}
+		else if (podeSerConvertidoImplicitamente($1.tipo, $3.tipo) && operadorFuncionaEmTipo(operador, $3.tipo))
+		{
+			// Expressão 1 pode ser convertida no tipo de Expressão 2
+			tipoFinal = $3.tipo;
+			tradConversão = ConversaoCodIntermediario($1.label, $3.tipo, labelEsq) + "\t";
+			labelDir = $3.label;
+		}	
+		else
+		{				
+			// Quando não é possível realizar nenhuma conversão implícita, os tipos não sou iguais ou não é possível operar sobre esse tipo
+			semanticError("Expressao invalida -> o operador '" + operadorCodInt + "' não pode ser aplicado entre os tipos " + tipoParaString($1.tipo) + " e " + tipoParaString($3.tipo));
 			YYABORT;
 		}		
+
+		$$.label = novaVarTemp(tipoFinal);
+		$$.tipo = tipoFinal;
+		$$.traducao = $1.traducao + $3.traducao + "\t" + tradConversão + $$.label + " = " + labelEsq + " " + operadorCodInt + " " + labelDir + ";\n";
+		
 	}
 	| EXPRESSAO '/' EXPRESSAO
 	{
-		if ((($1.tipo == TIPO_INT) && ($3.tipo == TIPO_INT)) || (($1.tipo == TIPO_FLOAT) && ($3.tipo == TIPO_FLOAT)))
+		TIPO tipoFinal;
+		string tradConversão = "";
+		string labelEsq;
+		string labelDir;
+		string operadorCodInt = "/";
+		int operador = '/';
+
+		if (expressaoTiposIguais($1, $3) && operadorFuncionaEmTipo(operador, $1.tipo))
 		{
-			// Tipos de numeros iguais
-			$$.label = novaVarTemp($1.tipo);
-			$$.tipo = $1.tipo;
-			$$.traducao = $1.traducao + $3.traducao + "\t" + $$.label +
-				" = " + $1.label + " / " + $3.label + ";\n";
+			tipoFinal = $1.tipo;
+			labelEsq = $1.label;
+			labelDir = $3.label;
 		} 
-		else
+		else if (operadorFuncionaEmTipo(operador, $1.tipo) && podeSerConvertidoImplicitamente($3.tipo, $1.tipo))
 		{
-			// TODO: Explicar que não pode-se realizar essa operação com os tipos de Expressão 1 e Expressão 2
-			semanticError("Expressao invalida -> o operador '/' não pode ser aplicado entre os tipos " + tipoParaString($1.tipo) + " e " + tipoParaString($3.tipo));
-			YYABORT;
+			// Expressão 2 pode ser convertida no tipo de Expressão 1
+			tipoFinal = $1.tipo;
+			labelEsq = $1.label;
+			tradConversão = ConversaoCodIntermediario($3.label, $1.tipo, labelDir) + "\t";
 		}
+		else if (podeSerConvertidoImplicitamente($1.tipo, $3.tipo) && operadorFuncionaEmTipo(operador, $3.tipo))
+		{
+			// Expressão 1 pode ser convertida no tipo de Expressão 2
+			tipoFinal = $3.tipo;
+			tradConversão = ConversaoCodIntermediario($1.label, $3.tipo, labelEsq) + "\t";
+			labelDir = $3.label;
+		}	
+		else
+		{				
+			// Quando não é possível realizar nenhuma conversão implícita, os tipos não sou iguais ou não é possível operar sobre esse tipo
+			semanticError("Expressao invalida -> o operador '" + operadorCodInt + "' não pode ser aplicado entre os tipos " + tipoParaString($1.tipo) + " e " + tipoParaString($3.tipo));
+			YYABORT;
+		}		
+
+		$$.label = novaVarTemp(tipoFinal);
+		$$.tipo = tipoFinal;
+		$$.traducao = $1.traducao + $3.traducao + "\t" + tradConversão + $$.label + " = " + labelEsq + " " + operadorCodInt + " " + labelDir + ";\n";
+		
 	}		
 ;
 
@@ -429,6 +510,7 @@ DECLARACAO:
 		}
 	}
 ;
+
 %%
 
 // OBS: Esse include deve estar em acordo com os arquivos make, para que não haja erro na compilação; 
@@ -538,6 +620,12 @@ string tipoParaString(TIPO tipo)
 	return "unknown";
 }
 
+// Retorna, dada duas expressões, se os tipos são iguais
+bool expressaoTiposIguais(atributos exp1, atributos exp2)
+{
+	return exp1.tipo == exp2.tipo;
+}
+
 // Retorna, dado um tipo A, se tipo B pode ser atribuído à tipo A.
 bool tipoPodeSerAtribuido(TIPO tipoA, TIPO tipoB)
 {
@@ -548,6 +636,17 @@ bool tipoPodeSerAtribuido(TIPO tipoA, TIPO tipoB)
 	if (podeSerConvertidoImplicitamente(tipoB, tipoA))
 	{
 		return true;
+	}
+	return false;
+}
+
+// Retorna se o operador/token 'operadorOuToken' pode ser usado em uma expressão do tipo 'tipo'
+bool operadorFuncionaEmTipo(int operadorOuToken, TIPO tipo)
+{
+	pair<int, TIPO> op { operadorOuToken, tipo };
+	if (tabelaOperadores.find(op) != tabelaOperadores.end())
+	{
+		return tabelaOperadores[op];
 	}
 	return false;
 }
@@ -584,6 +683,29 @@ void inicializarTabelaConversao()
 	// CONVERSÕES DE BOOL
 
 	// CONVERSÕES DE CHAR
+}
+
+void inicializarTabelaDeOperadores()
+{	
+	// INT
+	tabelaDeOperadoresAdd('+', TIPO_INT);
+	tabelaDeOperadoresAdd('-', TIPO_INT);
+	tabelaDeOperadoresAdd('*', TIPO_INT);
+	tabelaDeOperadoresAdd('/', TIPO_INT);
+
+	// FLOAT	
+	tabelaDeOperadoresAdd('+', TIPO_FLOAT);
+	tabelaDeOperadoresAdd('-', TIPO_FLOAT);
+	tabelaDeOperadoresAdd('*', TIPO_FLOAT);
+	tabelaDeOperadoresAdd('/', TIPO_FLOAT);
+
+}
+
+// Usado para adicionar uma linha na tabela de operadores
+void tabelaDeOperadoresAdd(int operador, TIPO tipo)
+{
+	pair<int, TIPO> op { operador, tipo };
+	tabelaOperadores[op] = true;
 }
 
 // Verifica se um tipo A pode ser convertido em um tipo B explicitamente
@@ -641,6 +763,7 @@ void initialize()
 	var_qnt = 0;
 
 	inicializarTabelaConversao();
+	inicializarTabelaDeOperadores();
 }
 
 int main(int argc, char* argv[])
