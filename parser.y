@@ -437,14 +437,22 @@ ATRIBUICAO:
 	{		
 		// Se a variável já foi declarada, apenas altera seu valor; 
 		// Se a variável não era inicializada ainda, agora ela é;		
+		string labelExp = $3.label;
+		string tradConversao = "";
+
 		if (!tipoPodeSerAtribuido(varTipo($1.label), $3.tipo))
 		{
 			semanticError("Erro de tipo -> A expressão de tipo '" + tipoParaString($3.tipo) + "' não é do tipo esperado (" + tipoParaString(varTipo($1.label)) + ").");
 			YYABORT;
 		}
+		if (varTipo($1.label) != $3.tipo)
+		{
+			// Deve ser feita uma conversão implícita, a expressão pode ser atribuída à essa variável, caso contrário a condicional de cima daria erro
+			tradConversao = ConversaoCodIntermediario($3.label, varTipo($1.label), labelExp) + "\t";
+		}
 
 		$$.label = $1.label;
-		$$.traducao = $3.traducao + "\t" + varNomeReal($1.label) + " = " + $3.label + ";" + " // " + $1.label + "\n";
+		$$.traducao = $3.traducao + "\t" + tradConversao + varNomeReal($1.label) + " = " + labelExp + ";" + " // " + $1.label + "\n";
 
 		Simbolo* s = tabelaSimbolos[$1.label];
 		s->simboloInicializado = true;		
@@ -454,14 +462,22 @@ ATRIBUICAO:
 	{
 		// OBS: Declaração com inicialização; Em declaração a variável já é declarada corretamente; Aqui basta adicionar o valor da expressão se for do mesmo tipo e
 		// 		adicionar uma tradução para esse nó
+		string labelExp = $3.label;
+		string tradConversao = "";
+
 		if (!tipoPodeSerAtribuido(varTipo($1.label), $3.tipo))
 		{
-			semanticError("Erro de tipo -> Uma expressão de tipo '" + tipoParaString($3.tipo) + "' não pode ser usada para inicializar uma variável do tipo '" + tipoParaString(varTipo($1.label)) + "'.");
+			semanticError("Erro de tipo -> Uma expressão de tipo '" + tipoParaString($3.tipo) + "' não pode ser atribuída em uma variável do tipo '" + tipoParaString(varTipo($1.label)) + "'.");
 			YYABORT;
+		}
+		if (varTipo($1.label) != $3.tipo)
+		{
+			// Deve ser feita uma conversão implícita, a expressão pode ser atribuída à essa variável, caso contrário a condicional de cima daria erro
+			tradConversao = ConversaoCodIntermediario($3.label, varTipo($1.label), labelExp) + "\t";
 		}
 
 		$$.label = $1.label;
-		$$.traducao = $3.traducao + "\t" + varNomeReal($1.label) + " = " + $3.label + ";" + " // " + $1.label + "\n";
+		$$.traducao = $3.traducao + "\t" + tradConversao + varNomeReal($1.label) + " = " + labelExp + ";" + " // " + $1.label + "\n";
 
 		Simbolo* s = tabelaSimbolos[$1.label];
 		s->simboloInicializado = true;
