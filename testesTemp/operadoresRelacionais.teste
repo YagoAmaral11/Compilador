@@ -1,0 +1,17 @@
+int a;
+int b;
+float x;
+bool resultado;
+
+a = 10;
+b = 5;
+x = 2.5;
+
+
+resultado = a > b; 
+
+resultado = a + 2 > b * 3;
+
+resultado = (a == b);
+
+resultado = x <= 5.0;

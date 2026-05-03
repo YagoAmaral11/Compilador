@@ -21,16 +21,28 @@ ID {LETRA}({DIGITO}|{LETRA})*
 
 %%
 
+
 "\n"		{ linha++; coluna = 0; }
 {DELIM} 	{ coluna += strlen(yytext); }
+
+"&&"        { coluna += 2; return OP_AND; }
+"||"        { coluna += 2; return OP_OR; }
+"!"         { coluna += 1; return OP_NOT; }
+"=="         { coluna += 2; return OP_IGUAL; }
+"!="     { coluna += 2; return OP_DIFERENTE; }
+"<="   { coluna += 2; return OP_MENOR_IGUAL; }
+">="   { coluna += 2; return OP_MAIOR_IGUAL; }
+"<"         { coluna ++; return OP_MENOR; }
+">"         { coluna ++; return OP_MAIOR; }
+
 [=]         { coluna++; return *yytext; }
 [+-/*]		{ coluna++; return *yytext; }
 [()]        { coluna++; return *yytext; }
 [;]         { coluna++; return *yytext; }
 "int"       { coluna += strlen(yytext); yylval.tipo = TIPO_INT; return TK_TIPO; }
-"float"       { coluna += strlen(yytext); yylval.tipo = TIPO_FLOAT; return TK_TIPO; }
-"char"       { coluna += strlen(yytext); yylval.tipo = TIPO_CHAR; return TK_TIPO; }
-"bool"       { coluna += strlen(yytext); yylval.tipo = TIPO_BOOL; return TK_TIPO; }
+"float"     { coluna += strlen(yytext); yylval.tipo = TIPO_FLOAT; return TK_TIPO; }
+"char"      { coluna += strlen(yytext); yylval.tipo = TIPO_CHAR; return TK_TIPO; }
+"bool"      { coluna += strlen(yytext); yylval.tipo = TIPO_BOOL; return TK_TIPO; }
 "var"       { coluna += strlen(yytext); return TK_VAR; }
 {INT}		{ coluna += strlen(yytext); yylval.label = yytext; yylval.tipo = TIPO_INT; return TK_NUM; }
 {FLOAT}		{ coluna += strlen(yytext); yylval.label = yytext; yylval.tipo = TIPO_FLOAT; return TK_NUM; }
