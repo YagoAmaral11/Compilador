@@ -913,6 +913,10 @@ void inicializarTabelaDeOperadores()
 	tabelaDeOperadoresAdd(OP_IGUAL, TIPO_BOOL);
 	tabelaDeOperadoresAdd(OP_DIFERENTE, TIPO_BOOL);
 
+	// CHAR
+	tabelaDeOperadoresAdd(OP_IGUAL, TIPO_CHAR);
+	tabelaDeOperadoresAdd(OP_DIFERENTE, TIPO_CHAR);
+
 }
 
 // Usado para adicionar uma linha na tabela de operadores
