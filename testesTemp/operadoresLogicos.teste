@@ -1,0 +1,10 @@
+int a;
+int b;
+float x;
+bool resultado;
+bool resultado2;
+a = 10;
+b = 8;
+x = 4.0;
+resultado = (a > b) && (x <= 5.0);
+resultado2 = !(a == b);

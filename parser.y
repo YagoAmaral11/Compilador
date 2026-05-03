@@ -75,6 +75,8 @@ queue<TIPO> tipoDosTemporarios; // O tipo de cada variável temporária; Está e
 
 %token TK_VAR
 
+%token OP_NOT OP_AND OP_OR
+
 /* OBS: Cada novo tipo adicionado, deve-se criar um token desses e alterar o yylval.tipo para o token correspondente no lexer  */
 /* 		É também necessário, para cada tipo novo, alterar: tipoCodIntermediario, tipoParaString e tipoPodeSerAtribuido 	*/
 /* TOKEN PARA OS TIPOS DIFERENTES */
@@ -87,12 +89,17 @@ queue<TIPO> tipoDosTemporarios; // O tipo de cada variável temporária; Está e
 %start OUTPUT
 
 %right '='
-/*Operadores relacionais*/
+
+/*Operadores logicos*/
+%left OP_OR
+%left OP_AND
+
 %left OP_DIFERENTE OP_IGUAL
 %left OP_MENOR OP_MAIOR OP_MENOR_IGUAL OP_MAIOR_IGUAL
 
 %left '+' '-'
 %left '*' '/'
+%left OP_NOT
 %left '(' ')'
 
 %%
@@ -358,7 +365,51 @@ EXPRESSAO:
 			YYABORT;
 		}
 	}
-	
+	| OP_NOT EXPRESSAO
+	{
+		if ($2.tipo == TIPO_BOOL)
+		{
+			$$.label = novaVarTemp(TIPO_BOOL);
+			$$.tipo = TIPO_BOOL;
+			$$.traducao = $2.traducao + "\t" + $$.label +
+				" = !" + $2.label + ";\n";
+		}
+		else
+		{
+			semanticError("Expressao invalida -> o operador '!' não pode ser aplicado ao tipo " + tipoParaString($2.tipo));
+			YYABORT;
+		}
+	}
+	| EXPRESSAO OP_AND EXPRESSAO
+	{
+		if (($1.tipo == TIPO_BOOL) && ($3.tipo == TIPO_BOOL))
+		{
+			$$.label = novaVarTemp(TIPO_BOOL);
+			$$.tipo = TIPO_BOOL;
+			$$.traducao = $1.traducao + $3.traducao + "\t" + $$.label +
+				" = " + $1.label + " && " + $3.label + ";\n";
+		}
+		else
+		{
+			semanticError("Expressao invalida -> o operador '&&' não pode ser aplicado entre os tipos " + tipoParaString($1.tipo) + " e " + tipoParaString($3.tipo));
+			YYABORT;
+		}
+	}
+	| EXPRESSAO OP_OR EXPRESSAO
+	{
+		if (($1.tipo == TIPO_BOOL) && ($3.tipo == TIPO_BOOL))
+		{
+			$$.label = novaVarTemp(TIPO_BOOL);
+			$$.tipo = TIPO_BOOL;
+			$$.traducao = $1.traducao + $3.traducao + "\t" + $$.label +
+				" = " + $1.label + " || " + $3.label + ";\n";
+		}
+		else
+		{
+			semanticError("Expressao invalida -> o operador '||' não pode ser aplicado entre os tipos " + tipoParaString($1.tipo) + " e " + tipoParaString($3.tipo));
+			YYABORT;
+		}
+	}
 ;
 
 ATRIBUICAO:
