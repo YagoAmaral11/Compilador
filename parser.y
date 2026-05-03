@@ -275,7 +275,7 @@ EXPRESSAO:
 			YYABORT;
 		}
 	}	
-	|	EXPRESSAO OP_MAIOR EXPRESSAO
+	| EXPRESSAO OP_MAIOR EXPRESSAO
 	{
 		if(($1.tipo == TIPO_INT) && ($3.tipo == TIPO_INT) || (($1.tipo == TIPO_FLOAT) && ($3.tipo == TIPO_FLOAT)))
 		{
@@ -290,7 +290,7 @@ EXPRESSAO:
 			YYABORT;
 		}
 	}
-	|	EXPRESSAO OP_MENOR EXPRESSAO
+	| EXPRESSAO OP_MENOR EXPRESSAO
 	{
 		if(($1.tipo == TIPO_INT) && ($3.tipo == TIPO_INT) || (($1.tipo == TIPO_FLOAT) && ($3.tipo == TIPO_FLOAT)))
 		{
@@ -326,8 +326,10 @@ EXPRESSAO:
 		{
 			$$.label = novaVarTemp(TIPO_BOOL);
 			$$.tipo = TIPO_BOOL;
-			$$.traducao = $1.traducao + $3.traducao + "\t" + $$.label +
-				" = " + $1.label + " != " + $3.label + ";\n";
+			string labelExp = novaVarTemp(TIPO_BOOL);			
+			
+			$$.traducao = $1.traducao + $3.traducao + "\t" + labelExp +
+				" = " + $1.label + " == " + $3.label + ";\n" + "\t" + $$.label + " = " + "!" + labelExp + ";\n";
 		}
 		else
 		{
@@ -335,7 +337,7 @@ EXPRESSAO:
 			YYABORT;
 		}
 	}
-	|	EXPRESSAO OP_MENOR_IGUAL EXPRESSAO
+	| EXPRESSAO OP_MENOR_IGUAL EXPRESSAO
 	{
 		if(($1.tipo == TIPO_INT) && ($3.tipo == TIPO_INT) || (($1.tipo == TIPO_FLOAT) && ($3.tipo == TIPO_FLOAT)))
 		{
@@ -350,7 +352,7 @@ EXPRESSAO:
 			YYABORT;
 		}
 	}
-	|	EXPRESSAO OP_MAIOR_IGUAL EXPRESSAO
+	| EXPRESSAO OP_MAIOR_IGUAL EXPRESSAO
 	{
 		if(($1.tipo == TIPO_INT) && ($3.tipo == TIPO_INT) || (($1.tipo == TIPO_FLOAT) && ($3.tipo == TIPO_FLOAT)))
 		{
