@@ -15,8 +15,8 @@ CARACTER ([^\'\\\n]|\\.)
 DELIM {ESPACO}+
 CHAR \'{CARACTER}\'
 BOOL (true|false)
-INT {DIGITO}+
-FLOAT {DIGITO}+\.{DIGITO}+
+INT [-]?{DIGITO}+
+FLOAT [-]?{DIGITO}+\.{DIGITO}+(([eE])([-])?{DIGITO}+)?
 ID {LETRA}({DIGITO}|{LETRA})*
 
 %%
