@@ -79,6 +79,8 @@ bool expressaoTiposIguais(atributos exp1, atributos exp2);
 void inicializarTabelaConversao();
 bool podeSerConvertidoExplicitamente(TIPO a, TIPO b);
 bool podeSerConvertidoImplicitamente(TIPO a, TIPO b);
+bool operadorRelacionalDireto(YYSTYPE exp1, YYSTYPE exp2, int operador, string operadorCodInt, string& codIntFinal, string& labelFinal);
+int conversaoImpicitaOperadorBinario(YYSTYPE exp1, YYSTYPE exp2, int operador, string operadorCodIntermediario, string& labelConvertido, string& tradConversao);
 string ConversaoCodIntermediario(string labelA, TIPO tipoB, string& labelB);
 bool operadorFuncionaEmTipo(int operadorOuToken, TIPO tipo);
 void inicializarTabelaDeOperadores();
@@ -443,142 +445,169 @@ EXPRESSAO:
 		$$.traducao = $1.traducao + $3.traducao + "\t" + tradConversão + $$.label + " = " + labelEsq + " " + operadorCodInt + " " + labelDir + ";\n";
 		
 	}		
-  | EXPRESSAO OP_MAIOR EXPRESSAO
+    | EXPRESSAO OP_MAIOR EXPRESSAO
 	{
-		if(($1.tipo == TIPO_INT) && ($3.tipo == TIPO_INT) || (($1.tipo == TIPO_FLOAT) && ($3.tipo == TIPO_FLOAT)))
+		string codIntFinal = "";
+		string labelFinal = "";
+
+		if (!operadorRelacionalDireto($1, $3, OP_MAIOR, ">", codIntFinal, labelFinal))
 		{
-			$$.label = novaVarTemp(TIPO_BOOL);
-			$$.tipo = TIPO_BOOL;
-			$$.traducao = $1.traducao + $3.traducao + "\t" + $$.label +
-				" = " + $1.label + " > " + $3.label + ";\n";
-		}
-		else
-		{
-			semanticError("Expressao invalida -> o operador '>' não pode ser aplicado entre os tipos " + tipoParaString($1.tipo) + " e " + tipoParaString($3.tipo));
 			YYABORT;
 		}
+
+		$$.label = labelFinal;
+		$$.traducao = codIntFinal;
+		$$.tipo = TIPO_BOOL;
 	}
 	| EXPRESSAO OP_MENOR EXPRESSAO
 	{
-		if(($1.tipo == TIPO_INT) && ($3.tipo == TIPO_INT) || (($1.tipo == TIPO_FLOAT) && ($3.tipo == TIPO_FLOAT)))
+		string codIntFinal = "";
+		string labelFinal = "";
+
+		if (!operadorRelacionalDireto($1, $3, OP_MENOR, "<", codIntFinal, labelFinal))
 		{
-			$$.label = novaVarTemp(TIPO_BOOL);
-			$$.tipo = TIPO_BOOL;
-			$$.traducao = $1.traducao + $3.traducao + "\t" + $$.label +
-				" = " + $1.label + " < " + $3.label + ";\n";
-		}
-		else
-		{
-			semanticError("Expressao invalida -> o operador '<' não pode ser aplicado entre os tipos " + tipoParaString($1.tipo) + " e " + tipoParaString($3.tipo));
 			YYABORT;
 		}
+
+		$$.label = labelFinal;
+		$$.traducao = codIntFinal;
+		$$.tipo = TIPO_BOOL;
 	}
 	| EXPRESSAO OP_IGUAL EXPRESSAO
 	{
-		if(($1.tipo == TIPO_INT) && ($3.tipo == TIPO_INT) || (($1.tipo == TIPO_FLOAT) && ($3.tipo == TIPO_FLOAT)))
+		string codIntFinal = "";
+		string labelFinal = "";
+
+		if (!operadorRelacionalDireto($1, $3, OP_IGUAL, "==", codIntFinal, labelFinal))
 		{
-			$$.label = novaVarTemp(TIPO_BOOL);
-			$$.tipo = TIPO_BOOL;
-			$$.traducao = $1.traducao + $3.traducao + "\t" + $$.label +
-				" = " + $1.label + " == " + $3.label + ";\n";
-		}
-		else
-		{
-			semanticError("Expressao invalida -> o operador '==' não pode ser aplicado entre os tipos " + tipoParaString($1.tipo) + " e " + tipoParaString($3.tipo));
 			YYABORT;
 		}
+
+		$$.label = labelFinal;
+		$$.traducao = codIntFinal;
+		$$.tipo = TIPO_BOOL;
 	}
 	| EXPRESSAO OP_DIFERENTE EXPRESSAO
 	{
-		if(($1.tipo == TIPO_INT) && ($3.tipo == TIPO_INT) || (($1.tipo == TIPO_FLOAT) && ($3.tipo == TIPO_FLOAT)))
+		string labelEsq = $1.label;
+		string labelDir = $3.label;
+		string tradConversao = "";
+		string labelConvertido = "";	
+
+		int resultadoConversao = conversaoImpicitaOperadorBinario($1, $3, OP_DIFERENTE, "!=", labelConvertido, tradConversao);
+
+		if (resultadoConversao == 0)
 		{
-			$$.label = novaVarTemp(TIPO_BOOL);
-			$$.tipo = TIPO_BOOL;
-			string labelExp = novaVarTemp(TIPO_BOOL);			
-			
-			$$.traducao = $1.traducao + $3.traducao + "\t" + labelExp +
-				" = " + $1.label + " == " + $3.label + ";\n" + "\t" + $$.label + " = " + "!" + labelExp + ";\n";
+			// Ninguém foi convertido, só aplicar o operador no código intermediário		
 		}
-		else
+		else if (resultadoConversao == 1)
 		{
-			semanticError("Expressao invalida -> o operador '!=' não pode ser aplicado entre os tipos " + tipoParaString($1.tipo) + " e " + tipoParaString($3.tipo));
+			// exp2 foi convertido
+			labelDir = labelConvertido;
+		}
+		else if (resultadoConversao == 2)
+		{
+			// exp1 foi convertido
+			labelEsq = labelConvertido;
+		}
+		else if (resultadoConversao == -1)
+		{
+			// Erro; Operador não pode e não foi realizada nenhuma conversão
 			YYABORT;
+		}		
+
+		if (resultadoConversao > 0)
+		{
+			tradConversao = tradConversao + "\t";
 		}
+
+		string labelExp = novaVarTemp(TIPO_BOOL);	
+		$$.label = novaVarTemp(TIPO_BOOL);
+		$$.tipo = TIPO_BOOL;		
+
+		$$.traducao = $1.traducao + $3.traducao + "\t" + tradConversao + labelExp +
+				" = " + labelEsq + " == " + labelDir + ";\n" + "\t" + $$.label + " = " + "!" + labelExp + ";\n";
 	}
 	| EXPRESSAO OP_MENOR_IGUAL EXPRESSAO
 	{
-		if(($1.tipo == TIPO_INT) && ($3.tipo == TIPO_INT) || (($1.tipo == TIPO_FLOAT) && ($3.tipo == TIPO_FLOAT)))
+		string codIntFinal = "";
+		string labelFinal = "";
+
+		if (!operadorRelacionalDireto($1, $3, OP_MENOR_IGUAL, "<=", codIntFinal, labelFinal))
 		{
-			$$.label = novaVarTemp(TIPO_BOOL);
-			$$.tipo = TIPO_BOOL;
-			$$.traducao = $1.traducao + $3.traducao + "\t" + $$.label +
-				" = " + $1.label + " <= " + $3.label + ";\n";
-		}
-		else
-		{
-			semanticError("Expressao invalida -> o operador '<=' não pode ser aplicado entre os tipos " + tipoParaString($1.tipo) + " e " + tipoParaString($3.tipo));
 			YYABORT;
 		}
+
+		$$.label = labelFinal;
+		$$.traducao = codIntFinal;
+		$$.tipo = TIPO_BOOL;
 	}
 	| EXPRESSAO OP_MAIOR_IGUAL EXPRESSAO
 	{
-		if(($1.tipo == TIPO_INT) && ($3.tipo == TIPO_INT) || (($1.tipo == TIPO_FLOAT) && ($3.tipo == TIPO_FLOAT)))
+		string codIntFinal = "";
+		string labelFinal = "";
+
+		if (!operadorRelacionalDireto($1, $3, OP_MAIOR_IGUAL, ">=", codIntFinal, labelFinal))
 		{
-			$$.label = novaVarTemp(TIPO_BOOL);
-			$$.tipo = TIPO_BOOL;
-			$$.traducao = $1.traducao + $3.traducao + "\t" + $$.label +
-				" = " + $1.label + " >= " + $3.label + ";\n";
-		}
-		else
-		{
-			semanticError("Expressao invalida -> o operador '>=' não pode ser aplicado entre os tipos " + tipoParaString($1.tipo) + " e " + tipoParaString($3.tipo));
 			YYABORT;
 		}
+
+		$$.label = labelFinal;
+		$$.traducao = codIntFinal;
+		$$.tipo = TIPO_BOOL;
 	}
 	| OP_NOT EXPRESSAO
 	{
-		if ($2.tipo == TIPO_BOOL)
+		string labelExp = "";
+		string tradConversao = "";
+
+		if (operadorFuncionaEmTipo(OP_NOT, $2.tipo))
 		{
-			$$.label = novaVarTemp(TIPO_BOOL);
-			$$.tipo = TIPO_BOOL;
-			$$.traducao = $2.traducao + "\t" + $$.label +
-				" = !" + $2.label + ";\n";
+			// Expressão já é booleana; Só negar
+			labelExp = $2.label;
+		}
+		else if (podeSerConvertidoImplicitamente($2.tipo, TIPO_BOOL))
+		{
+			// Expressão pode virar uma booleana;
+			tradConversao = ConversaoCodIntermediario($2.label, TIPO_BOOL, labelExp) + "\t";
 		}
 		else
 		{
 			semanticError("Expressao invalida -> o operador '!' não pode ser aplicado ao tipo " + tipoParaString($2.tipo));
 			YYABORT;
 		}
+
+		$$.label = novaVarTemp(TIPO_BOOL);
+		$$.tipo = TIPO_BOOL;
+		$$.traducao = $2.traducao + "\t" + tradConversao + $$.label + " = !" + labelExp + ";\n";				
 	}
 	| EXPRESSAO OP_AND EXPRESSAO
 	{
-		if (($1.tipo == TIPO_BOOL) && ($3.tipo == TIPO_BOOL))
+		string codIntFinal = "";
+		string labelFinal = "";
+
+		if (!operadorRelacionalDireto($1, $3, OP_AND, "&&", codIntFinal, labelFinal))
 		{
-			$$.label = novaVarTemp(TIPO_BOOL);
-			$$.tipo = TIPO_BOOL;
-			$$.traducao = $1.traducao + $3.traducao + "\t" + $$.label +
-				" = " + $1.label + " && " + $3.label + ";\n";
-		}
-		else
-		{
-			semanticError("Expressao invalida -> o operador '&&' não pode ser aplicado entre os tipos " + tipoParaString($1.tipo) + " e " + tipoParaString($3.tipo));
 			YYABORT;
 		}
+
+		$$.label = labelFinal;
+		$$.traducao = codIntFinal;
+		$$.tipo = TIPO_BOOL;
 	}
 	| EXPRESSAO OP_OR EXPRESSAO
-	{
-		if (($1.tipo == TIPO_BOOL) && ($3.tipo == TIPO_BOOL))
+	{		
+		string codIntFinal = "";
+		string labelFinal = "";
+
+		if (!operadorRelacionalDireto($1, $3, OP_OR, "||", codIntFinal, labelFinal))
 		{
-			$$.label = novaVarTemp(TIPO_BOOL);
-			$$.tipo = TIPO_BOOL;
-			$$.traducao = $1.traducao + $3.traducao + "\t" + $$.label +
-				" = " + $1.label + " || " + $3.label + ";\n";
-		}
-		else
-		{
-			semanticError("Expressao invalida -> o operador '||' não pode ser aplicado entre os tipos " + tipoParaString($1.tipo) + " e " + tipoParaString($3.tipo));
 			YYABORT;
 		}
+
+		$$.label = labelFinal;
+		$$.traducao = codIntFinal;
+		$$.tipo = TIPO_BOOL;
 	}
 ;
 
@@ -787,7 +816,7 @@ string tipoParaString(TIPO tipo)
 }
 
 // Retorna, dada duas expressões, se os tipos são iguais
-bool expressaoTiposIguais(atributos exp1, atributos exp2)
+bool expressaoTiposIguais(YYSTYPE exp1, YYSTYPE exp2)
 {
 	return exp1.tipo == exp2.tipo;
 }
@@ -858,12 +887,35 @@ void inicializarTabelaDeOperadores()
 	tabelaDeOperadoresAdd('-', TIPO_INT);
 	tabelaDeOperadoresAdd('*', TIPO_INT);
 	tabelaDeOperadoresAdd('/', TIPO_INT);
+	tabelaDeOperadoresAdd(OP_MAIOR, TIPO_INT);
+	tabelaDeOperadoresAdd(OP_MENOR, TIPO_INT);
+	tabelaDeOperadoresAdd(OP_IGUAL, TIPO_INT);
+	tabelaDeOperadoresAdd(OP_DIFERENTE, TIPO_INT);
+	tabelaDeOperadoresAdd(OP_MAIOR_IGUAL, TIPO_INT);
+	tabelaDeOperadoresAdd(OP_MENOR_IGUAL, TIPO_INT);
 
 	// FLOAT	
 	tabelaDeOperadoresAdd('+', TIPO_FLOAT);
 	tabelaDeOperadoresAdd('-', TIPO_FLOAT);
 	tabelaDeOperadoresAdd('*', TIPO_FLOAT);
 	tabelaDeOperadoresAdd('/', TIPO_FLOAT);
+	tabelaDeOperadoresAdd(OP_MAIOR, TIPO_FLOAT);
+	tabelaDeOperadoresAdd(OP_MENOR, TIPO_FLOAT);
+	tabelaDeOperadoresAdd(OP_IGUAL, TIPO_FLOAT);
+	tabelaDeOperadoresAdd(OP_DIFERENTE, TIPO_FLOAT);
+	tabelaDeOperadoresAdd(OP_MAIOR_IGUAL, TIPO_FLOAT);
+	tabelaDeOperadoresAdd(OP_MENOR_IGUAL, TIPO_FLOAT);
+	
+	// BOOL
+	tabelaDeOperadoresAdd(OP_AND, TIPO_BOOL);
+	tabelaDeOperadoresAdd(OP_OR, TIPO_BOOL);
+	tabelaDeOperadoresAdd(OP_NOT, TIPO_BOOL);	
+	tabelaDeOperadoresAdd(OP_IGUAL, TIPO_BOOL);
+	tabelaDeOperadoresAdd(OP_DIFERENTE, TIPO_BOOL);
+
+	// CHAR
+	tabelaDeOperadoresAdd(OP_IGUAL, TIPO_CHAR);
+	tabelaDeOperadoresAdd(OP_DIFERENTE, TIPO_CHAR);
 
 }
 
@@ -908,6 +960,79 @@ bool podeSerConvertidoImplicitamente(TIPO a, TIPO b)
 	}
 
 	return false;
+}
+
+// Para operadores binários, verifica para duas expressões, se elas são de tipos iguais e o operador passado pode operar sobre elas, se sim retorna 0
+// OU tenta converter implicitamente um lado para o tipo do outro que o operador passado pode operar, se sim retorna (1 para o tipo da direita convertido, 2 para o tipo da esquerda convertido)
+// OU printa um erro semântico quando o operador passado não pode ser aplicado para essa expressão, se sim retorna -1
+// operador = tipo do operador, ex.: OP_AND, OP_NOT, '*', '+'
+// operadorCodIntermediario = a string usada para representar o operador no código intermediário, ex.: "&&", "!", "*", "+"
+// labelConvertido = uma string, passada por referência, do novo label que deve ser usado para a expressão que foi implicitamente convertida no tipo da outra
+// tradConversao = a tradução referente à conversão implícita de das expressões (sem nenhum \t no final). Se não ocorrer nenhuma, é igual à "" (string vazia)
+int conversaoImpicitaOperadorBinario(YYSTYPE exp1, YYSTYPE exp2, int operador, string operadorCodIntermediario, string& labelConvertido, string& tradConversao)
+{
+	if (expressaoTiposIguais(exp1, exp2) && operadorFuncionaEmTipo(operador, exp1.tipo))
+	{
+		return 0;
+	}
+	else if (operadorFuncionaEmTipo(operador, exp1.tipo) && podeSerConvertidoImplicitamente(exp2.tipo, exp1.tipo))
+	{
+		// Expressão 2 pode ser convertida no tipo de Expressão 1				
+		tradConversao = ConversaoCodIntermediario(exp2.label, exp1.tipo, labelConvertido);
+		return 1;
+	}
+	else if (podeSerConvertidoImplicitamente(exp1.tipo, exp2.tipo) && operadorFuncionaEmTipo(operador, exp2.tipo))
+	{
+		// Expressão 1 pode ser convertida no tipo de Expressão 2		
+		tradConversao = ConversaoCodIntermediario(exp1.label, exp2.tipo, labelConvertido);
+		return 2;
+	}	
+	else
+	{				
+		// Quando não é possível realizar nenhuma conversão implícita, os tipos não sou iguais ou não é possível operar sobre esse tipo
+		semanticError("Expressao invalida -> o operador '" + operadorCodIntermediario + "' não pode ser aplicado entre os tipos " + tipoParaString(exp1.tipo) + " e " + tipoParaString(exp2.tipo));
+		return -1;
+	}		
+}
+
+// Para os operadores relacionais, que funcionam e tem sintaxe idêntica ao C, podendo ser traduzidos diretamente para o código intermediário
+// retorna verdadeiro se a semântica está correta
+bool operadorRelacionalDireto(YYSTYPE exp1, YYSTYPE exp2, int operador, string operadorCodInt, string& codIntFinal, string& labelFinal)
+{	
+	string labelEsq = exp1.label;
+	string labelDir = exp2.label;
+	string tradConversao = "";
+	string labelConvertido = "";	
+	int resultadoConversao = conversaoImpicitaOperadorBinario(exp1, exp2, operador, operadorCodInt, labelConvertido, tradConversao);
+
+	if (resultadoConversao == 0)
+	{
+		// Ninguém foi convertido, só aplicar o operador no código intermediário		
+	}
+	else if (resultadoConversao == 1)
+	{
+		// exp2 foi convertido
+		labelDir = labelConvertido;
+	}
+	else if (resultadoConversao == 2)
+	{
+		// exp1 foi convertido
+		labelEsq = labelConvertido;
+	}
+	else if (resultadoConversao == -1)
+	{
+		return false;
+	}
+
+	labelFinal = novaVarTemp(TIPO_BOOL);
+
+	if (resultadoConversao > 0)
+	{
+		tradConversao = tradConversao + "\t";
+	}
+
+	codIntFinal = exp1.traducao + exp2.traducao + "\t" + tradConversao + labelFinal + " = " + labelEsq + " " + operadorCodInt + " " + labelDir + ";\n";
+	return true;
 }
 
 // Realiza uma conversão simples no código intermediário (por meio de cast no C) com label 'labelA' para uma do tipo 'B',
