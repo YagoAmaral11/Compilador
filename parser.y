@@ -7,6 +7,7 @@
 #include <locale>
 #include <cstdlib>
 #include <utility>
+#include <vector>
 
 using namespace std;
 
@@ -85,6 +86,9 @@ string ConversaoCodIntermediario(string labelA, TIPO tipoB, string& labelB);
 bool operadorFuncionaEmTipo(int operadorOuToken, TIPO tipo);
 void inicializarTabelaDeOperadores();
 void tabelaDeOperadoresAdd(int operador, TIPO tipo);
+void empilharEscopo();
+void desempilharEscopo();
+Simbolo* obterSimbolo(string labelUsuario);
 
 // Variáveis
 int var_temp_qnt; // Contador de variáveis temporárias
@@ -94,7 +98,7 @@ int linha = 1; // Contador da linha do comando; Atualizado no lexer
 int coluna = 0; // Contador de caracteres do comando; Atualizado no lexer
 
 string codigo_gerado; // Código intermediário gerado pelo compilador
-unordered_map<string, Simbolo*> tabelaSimbolos; // Tabela de símbolos
+vector<unordered_map<string, Simbolo*>> tabelaSimbolos; // Tabela de símbolos
 queue<string> ordemDeclaracaoSimbolos; // A ordem de declaração dos símbolos da tabela; TODO: Essa estrutura ainda precisa existir? Remover depois
  
 queue<TIPO> tipoDosTemporarios; // O tipo de cada variável temporária; Está em ordem de declaração
@@ -125,6 +129,8 @@ unordered_map<pair<int, TIPO>, bool, pair_hash> tabelaOperadores;
 %token TK_VAR
 
 %token OP_NOT OP_AND OP_OR
+
+
 
 /* OBS: Cada novo tipo adicionado, deve-se criar um token desses e alterar o yylval.tipo para o token correspondente no lexer  */
 /* 		É também necessário, para cada tipo novo, alterar: tipoCodIntermediario, tipoParaString, inicializarTabelaConversao e inicializarTabelaDeOperadores 	*/
@@ -178,7 +184,7 @@ OUTPUT:
 		while (!ordemDeclaracaoSimbolos.empty())
 		{			 
 			string labelVar = ordemDeclaracaoSimbolos.front();
-			Simbolo* s = tabelaSimbolos[labelVar];
+			Simbolo* s = obterSimbolo(labelVar);
 
 			codigo_gerado += "\t// " + labelVar + ":\n";
 			// TODO: No futuro, verificar se esse tipo pode descrito facilmente assim no cod. intermediário
@@ -633,7 +639,7 @@ ATRIBUICAO:
 		$$.label = $1.label;
 		$$.traducao = $3.traducao + "\t" + tradConversao + varNomeReal($1.label) + " = " + labelExp + ";" + " // " + $1.label + "\n";
 
-		Simbolo* s = tabelaSimbolos[$1.label];
+		Simbolo* s = obterSimbolo($1.label);
 		s->simboloInicializado = true;		
 	}
 	|
@@ -658,7 +664,7 @@ ATRIBUICAO:
 		$$.label = $1.label;
 		$$.traducao = $3.traducao + "\t" + tradConversao + varNomeReal($1.label) + " = " + labelExp + ";" + " // " + $1.label + "\n";
 
-		Simbolo* s = tabelaSimbolos[$1.label];
+		Simbolo* s = obterSimbolo($1.label);
 		s->simboloInicializado = true;
 	}
 	|
@@ -677,7 +683,7 @@ ATRIBUICAO:
 			Simbolo* s = novaVar($4.tipo);
 			s->simboloInicializado = true;			
 
-			tabelaSimbolos[$2.label] = s;						
+			tabelaSimbolos.back()[$2.label] = s;						
 			ordemDeclaracaoSimbolos.push($2.label);
 			
 			$$.traducao = $4.traducao + "\t" + varNomeReal($2.label) + " = " + $4.label + ";" + " // " + $2.label + "\n";
@@ -700,7 +706,7 @@ DECLARACAO:
 
 			Simbolo* s = novaVar($1.tipo);
 
-			tabelaSimbolos[$2.label] = s;
+			tabelaSimbolos.back()[$2.label] = s;
 			ordemDeclaracaoSimbolos.push($2.label);
 		}
 	}
@@ -736,37 +742,55 @@ Simbolo* novaVar(TIPO tipo)
 	return s;
 }
 
-// Usado para verificar se existe uma variável de nome labelUsuario
-bool varExiste(string labelUsuario)
+
+void empilharEscopo()
 {
-	if (tabelaSimbolos.find(labelUsuario) != tabelaSimbolos.end())
+	tabelaSimbolos.push_back(unordered_map<string, Simbolo*>());
+}
+
+void desempilharEscopo()
+{
+	tabelaSimbolos.pop_back();
+}
+
+Simbolo* obterSimbolo(string labelUsuario)
+{
+	for(auto it = tabelaSimbolos.rbegin(); it != tabelaSimbolos.rend(); ++it)
 	{
-		return true;
+		if (it->find(labelUsuario) != it->end())
+		{
+			return it->at(labelUsuario);
+		}
 	}
-	return false;
+	return NULL;
+}
+
+// Usado para verificar se existe uma variável de nome labelUsuario
+bool varExiste(string labelUsuario){
+	return obterSimbolo(labelUsuario) != NULL;
 }
 
 // Usado para verificar se uma variável que EXISTA já foi inicializada
 // OBS: Não verifica se a variável realmente existe
 bool varInicializada(string labelUsuario)
 {
-	Simbolo* s = tabelaSimbolos[labelUsuario];
-	return s-> simboloInicializado;
+	Simbolo* s = obterSimbolo(labelUsuario);
+	return s ? s-> simboloInicializado : false;
 }
 
 // Usado para retornar o nome real de uma variável que EXISTA na tabela de símbolos
 // OBS: Não verifica se o símbolo existe ou não
 string varNomeReal(string labelUsuario)
 {
-	Simbolo* s = tabelaSimbolos[labelUsuario];
-	return s->labelReal;
+	Simbolo* s = obterSimbolo(labelUsuario);
+	return s ? s->labelReal : "";
 }
 
 // Usado para ver tipo do simbolo. 
 // OBS: Não verifica se o símbolo existe ou não
 TIPO varTipo(string labelUsuario)
 {
-	Simbolo* s = tabelaSimbolos[labelUsuario];
+	Simbolo* s = obterSimbolo(labelUsuario);
 	return s->tipoDeclarado;
 }
 
@@ -1055,6 +1079,8 @@ void initialize()
 
 	inicializarTabelaConversao();
 	inicializarTabelaDeOperadores();
+
+	empilharEscopo();
 }
 
 int main(int argc, char* argv[])
