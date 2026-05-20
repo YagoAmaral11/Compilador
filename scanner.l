@@ -38,6 +38,7 @@ ID {LETRA}({DIGITO}|{LETRA})*
 [=]         { coluna++; return *yytext; }
 [+-/*]		{ coluna++; return *yytext; }
 [()]        { coluna++; return *yytext; }
+[{}]        { coluna++; return *yytext; }
 [;]         { coluna++; return *yytext; }
 "int"       { coluna += strlen(yytext); yylval.tipo = TIPO_INT; return TK_TIPO; }
 "float"     { coluna += strlen(yytext); yylval.tipo = TIPO_FLOAT; return TK_TIPO; }

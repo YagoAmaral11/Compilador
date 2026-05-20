@@ -70,6 +70,7 @@ void semanticError(string MSG);
 string novaVarTemp(TIPO tipo);
 Simbolo* novaVar(TIPO tipo);
 bool varExiste(string labelUsuario);
+bool varExisteNoEscopoAtual(string labelUsuario);
 bool varInicializada(string labelUsuario);
 string varNomeReal(string labelUsuario);
 TIPO varTipo(string labelUsuario);
@@ -227,7 +228,18 @@ COMANDO:
 	{
 		$$.traducao = $1.traducao;
 	}
+	| BLOCO
+	{
+		$$.traducao = $1.traducao;
+	}
 ;
+
+BLOCO:
+	'{' { empilharEscopo(); } PROGRAMA_MINIMO '}'
+	{
+		desempilharEscopo();
+		$$.traducao =  $3.traducao;
+	}
 
 EXPRESSAO: 	
 	TK_NUM
@@ -671,7 +683,7 @@ ATRIBUICAO:
 	TK_VAR TK_ID '=' EXPRESSAO
 	{
 		// OBS: Declaração implícita por inferência
-		if (varExiste($2.label))
+		if (varExisteNoEscopoAtual($2.label))
 		{
 			semanticError("Simbolo ja declarado -> '" + $2.label + "'. Nao e possivel declarar novamente, escolha outro nome.");
 			YYABORT;
@@ -694,9 +706,9 @@ ATRIBUICAO:
 DECLARACAO:
 	TK_TIPO TK_ID
 	{
-		if (varExiste($2.label))
+		if (varExisteNoEscopoAtual($2.label))
 		{
-			semanticError("Simbolo ja declarado -> '" + $1.label + "'. Nao e possivel declarar novamente, escolha outro nome.");
+			semanticError("Simbolo ja declarado -> '" + $2.label + "'. Nao e possivel declarar novamente, escolha outro nome.");
 			YYABORT;
 		}
 		else
@@ -763,6 +775,12 @@ Simbolo* obterSimbolo(string labelUsuario)
 		}
 	}
 	return NULL;
+}
+
+// Usado para verificar se existe uma variável de nome labelUsuario no escopo atual(bloco atual, função atual, etc.)
+bool varExisteNoEscopoAtual(string labelUsuario)
+{
+	return tabelaSimbolos.back().find(labelUsuario) != tabelaSimbolos.back().end();
 }
 
 // Usado para verificar se existe uma variável de nome labelUsuario
