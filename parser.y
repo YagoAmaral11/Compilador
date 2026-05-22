@@ -161,7 +161,7 @@ unordered_map<pair<int, TIPO>, bool, pair_hash> tabelaOperadores;
 %%
 
 OUTPUT: 
-	PROGRAMA_MINIMO
+	COMANDOS
 	{
 		// TODO: Depois separar em funções
 
@@ -201,13 +201,13 @@ OUTPUT:
 	}
 ;
 
-PROGRAMA_MINIMO:
+COMANDOS:
 	COMANDO
 	{
 		$$.traducao = $1.traducao;
 	}
 	|
-	PROGRAMA_MINIMO COMANDO
+	COMANDOS COMANDO
 	{
 		$$.traducao = $1.traducao + $2.traducao;
 	}
@@ -233,11 +233,12 @@ COMANDO:
 ;
 
 BLOCO:
-	'{' { empilharEscopo(); } PROGRAMA_MINIMO '}'
+	'{' { empilharEscopo(); } COMANDOS '}'
 	{
 		desempilharEscopo();
 		$$.traducao =  $3.traducao;
 	}
+;
 
 EXPRESSAO: 	
 	TK_NUM
