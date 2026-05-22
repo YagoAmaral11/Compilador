@@ -1,0 +1,10 @@
+int a = 3;
+
+{
+    int a = 10;
+    int b = 5;
+    var c = a + b;
+}
+
+int b = 3;
+var c = a + b;
