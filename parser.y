@@ -100,7 +100,7 @@ int coluna = 0; // Contador de caracteres do comando; Atualizado no lexer
 
 string codigo_gerado; // Código intermediário gerado pelo compilador
 vector<unordered_map<string, Simbolo*>> tabelaSimbolos; // Tabela de símbolos
-queue<string> ordemDeclaracaoSimbolos; // A ordem de declaração dos símbolos da tabela; TODO: Essa estrutura ainda precisa existir? Remover depois
+queue<Simbolo*> ordemDeclaracaoSimbolos; // A ordem de declaração dos símbolos da tabela; TODO: Essa estrutura ainda precisa existir? Remover depois
  
 queue<TIPO> tipoDosTemporarios; // O tipo de cada variável temporária; Está em ordem de declaração
 
@@ -184,12 +184,10 @@ OUTPUT:
 		codigo_gerado += "\n\t// Variaveis Globais\n";				
 		while (!ordemDeclaracaoSimbolos.empty())
 		{			 
-			string labelVar = ordemDeclaracaoSimbolos.front();
-			Simbolo* s = obterSimbolo(labelVar);
+			Simbolo* s = ordemDeclaracaoSimbolos.front();
 
-			codigo_gerado += "\t// " + labelVar + ":\n";
 			// TODO: No futuro, verificar se esse tipo pode descrito facilmente assim no cod. intermediário
-			codigo_gerado += "\t" + tipoCodIntermediario(s->tipoDeclarado) + " " + s->labelReal + ";" + " // " + tipoParaString(s->tipoDeclarado) + " " + labelVar + "\n";
+			codigo_gerado += "\t" + tipoCodIntermediario(s->tipoDeclarado) + " " + s->labelReal + ";\n";
 
 			ordemDeclaracaoSimbolos.pop();
 		}
@@ -696,7 +694,7 @@ ATRIBUICAO:
 			s->simboloInicializado = true;			
 
 			tabelaSimbolos.back()[$2.label] = s;						
-			ordemDeclaracaoSimbolos.push($2.label);
+			ordemDeclaracaoSimbolos.push(s);
 			
 			$$.traducao = $4.traducao + "\t" + varNomeReal($2.label) + " = " + $4.label + ";" + " // " + $2.label + "\n";
 		}
@@ -719,7 +717,7 @@ DECLARACAO:
 			Simbolo* s = novaVar($1.tipo);
 
 			tabelaSimbolos.back()[$2.label] = s;
-			ordemDeclaracaoSimbolos.push($2.label);
+			ordemDeclaracaoSimbolos.push(s);
 		}
 	}
 ;
