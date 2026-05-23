@@ -132,7 +132,8 @@ unordered_map<pair<int, TIPO>, bool, pair_hash> tabelaOperadores;
 
 %token OP_NOT OP_AND OP_OR
 
-
+// TOKEN PARA OS DIFERENTES COMANDOS DE CONTROLE DE FLUXO; OBS: Para cada comando novo, deve-se criar um token correspondente e alterar o lexer para retornar esse token quando encontrar a palavra reservada do comando
+%token TK_IF TK_ELSE TK_WHILE TK_FOR TK_SWITCH TK_CASE TK_DEFAULT TK_DO
 
 /* OBS: Cada novo tipo adicionado, deve-se criar um token desses e alterar o yylval.tipo para o token correspondente no lexer  */
 /* 		É também necessário, para cada tipo novo, alterar: tipoCodIntermediario, tipoParaString, inicializarTabelaConversao e inicializarTabelaDeOperadores 	*/
@@ -231,6 +232,10 @@ COMANDO:
 	{
 		$$.traducao = $1.traducao;
 	}
+	| IF
+	{
+		$$.traducao = $1.traducao;
+	}
 ;
 
 BLOCO:
@@ -240,6 +245,24 @@ BLOCO:
 		$$.traducao = "\n\t// Inicio do bloco\n" + $3.traducao + "\t// Fim do bloco\n\n";
 	}
 ;
+
+IF :
+	TK_IF '(' EXPRESSAO ')' { empilharEscopo(); } COMANDO
+	{
+		if ($3.tipo != TIPO_BOOL)
+		{
+			semanticError("Erro de tipo -> A expressão do if deve ser do tipo booleano; Tipo '" + tipoParaString($3.tipo) + "' encontrado.");
+			YYABORT;
+		}
+
+		desempilharEscopo();
+
+		string labelExp = novaVarTemp(TIPO_BOOL);
+
+		string codIntFinal = $3.traducao + "\t" + labelExp + " = !" + $3.label + ";\n" + "\t" + "if (" + labelExp + ") goto " + labelExp + "_fim;\n" + $6.traducao + "\t" + labelExp + "_fim:\n";
+
+		$$.traducao = codIntFinal;
+	}
 
 EXPRESSAO: 	
 	TK_NUM

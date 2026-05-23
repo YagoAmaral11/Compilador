@@ -27,7 +27,14 @@ NOT (!|not)
 
 "\n"		{ linha++; coluna = 0; }
 {DELIM} 	{ coluna += strlen(yytext); }
-
+"if"       { coluna += strlen(yytext); return TK_IF; }
+"else"     { coluna += strlen(yytext); return TK_ELSE; }
+"while"    { coluna += strlen(yytext); return TK_WHILE; }
+"for"      { coluna += strlen(yytext); return TK_FOR; }
+"switch"   { coluna += strlen(yytext); return TK_SWITCH; }
+"case"     { coluna += strlen(yytext); return TK_CASE; }
+"default"  { coluna += strlen(yytext); return TK_DEFAULT; }
+"do"       { coluna += strlen(yytext); return TK_DO; }
 {AND}        { coluna += 2; return OP_AND; }
 {OR}        { coluna += 2; return OP_OR; }
 {NOT}         { coluna += 1; return OP_NOT; }
