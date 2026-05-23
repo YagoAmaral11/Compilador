@@ -85,6 +85,8 @@ string ConversaoCodIntermediario(string labelA, TIPO tipoB, string& labelB);
 bool operadorFuncionaEmTipo(int operadorOuToken, TIPO tipo);
 void inicializarTabelaDeOperadores();
 void tabelaDeOperadoresAdd(int operador, TIPO tipo);
+void inicializarTabelaFormatting();
+void tabelaFormattingAdd(TIPO tipo, string cFormato);
 
 // Variáveis
 int var_temp_qnt; // Contador de variáveis temporárias
@@ -109,6 +111,11 @@ unordered_map<pair<TIPO, TIPO>, ConversaoInfo, pair_hash> tabelaConversao;
 // OBS²: Note que essa não é uma tabela de conversões; Ela apenas verifica, para um par de variáveis de um tipo, se o operador passado pode ser usado
 unordered_map<pair<int, TIPO>, bool, pair_hash> tabelaOperadores;
 
+// Dado um TIPO (int, float, bool, char) salva qual o formato em C para ler/escrever aquele tipo no código intermediário
+// ex.: "%d" para int, "%f" para float, "%c" para char... 
+// OBS: as booleanas serão um problema, pois devem ser lidas como uma string (true/false) e transformadas em seu valor inteiro 1 ou 0
+unordered_map<TIPO, string> tabelaFormatting;
+
 // Macros
 #define tmpVarPrefix "tmp"
 #define varPrefix "var"
@@ -126,9 +133,11 @@ unordered_map<pair<int, TIPO>, bool, pair_hash> tabelaOperadores;
 
 %token OP_NOT OP_AND OP_OR
 
+%token TK_INPUT TK_OUTPUT
+
+/* TOKEN PARA OS TIPOS DIFERENTES */
 /* OBS: Cada novo tipo adicionado, deve-se criar um token desses e alterar o yylval.tipo para o token correspondente no lexer  */
 /* 		É também necessário, para cada tipo novo, alterar: tipoCodIntermediario, tipoParaString, inicializarTabelaConversao e inicializarTabelaDeOperadores 	*/
-/* TOKEN PARA OS TIPOS DIFERENTES */
 %token TIPO_INT
 %token TIPO_FLOAT
 %token TIPO_CHAR
@@ -221,6 +230,18 @@ COMANDO:
 	{
 		$$.traducao = $1.traducao;
 	}
+	| TK_OUTPUT EXPRESSAO ';'
+	{
+		TIPO tipoExp = $2.tipo;
+
+		if (tabelaFormatting.find(tipoExp) == tabelaFormatting.end())
+		{
+			semanticError("Não é possível ler o tipo " + tipoParaString(tipoExp) + " na entrada.");
+			YYABORT;
+		}
+
+		$$.traducao = $2.traducao + "\tprintf(\"" + tabelaFormatting[tipoExp] + "\\n\", " + $2.label + ");\n";
+	}
 ;
 
 EXPRESSAO: 	
@@ -250,6 +271,21 @@ EXPRESSAO:
 		$$.label = novaVarTemp(tipoId);
 		$$.tipo = tipoId;
 		$$.traducao = "\t" + $$.label + " = " + varNomeReal($1.label) + ";" + " // " + $1.label + "\n";
+	}
+	| TK_INPUT '(' TK_TIPO ')'
+	{
+		// Retorna uma variável do tipo TK_TIPO lida;
+		// Consegue criar o nó de atributos da árvore sintática corretamente
+		$$.label = novaVarTemp($3.tipo);
+		$$.tipo = $3.tipo;
+
+		if (tabelaFormatting.find($3.tipo) == tabelaFormatting.end())
+		{
+			semanticError("Não é possível ler o tipo " + tipoParaString($3.tipo) + " na entrada.");
+			YYABORT;
+		}
+
+		$$.traducao = "\tscanf(\"" + tabelaFormatting[$3.tipo] + "\", &" + $$.label + ");\n";
 	}
 	|	
 	'(' EXPRESSAO ')'
@@ -636,8 +672,29 @@ ATRIBUICAO:
 		Simbolo* s = tabelaSimbolos[$1.label];
 		s->simboloInicializado = true;		
 	}
-	|
-	DECLARACAO '=' EXPRESSAO
+	| TK_ID '=' TK_INPUT
+	{
+		// Ler o input do tipo do TK_ID
+		// Aqui não tem como TK_INPUT virar expressão pois é necessário inferir o tipo de TK_INPUT
+		TIPO tipoExp = varTipo($1.label);
+		string labelExp = novaVarTemp(tipoExp);
+		
+		if (tabelaFormatting.find(tipoExp) == tabelaFormatting.end())
+		{
+			semanticError("Não é possível ler o tipo " + tipoParaString(tipoExp) + " na entrada.");
+			YYABORT;
+		}
+
+		$$.label = $1.label;
+		$$.traducao = "\tscanf(\"" + tabelaFormatting[tipoExp] + "\", &" + labelExp + ");\n" + "\t" + varNomeReal($1.label) + " = " + labelExp + ";" + " // " + $1.label + "\n";
+
+		//  TODO: Quando integrar isso com os blocos, devem mudar a forma como o símbolo é inicializado; Deve-se usar o obterSímbolo no 
+		// lugar do tabelaSimbolos[$1.label]
+		Simbolo* s = tabelaSimbolos[$1.label];
+		s->simboloInicializado = true; 
+
+	}	
+	| DECLARACAO '=' EXPRESSAO
 	{
 		// OBS: Declaração com inicialização; Em declaração a variável já é declarada corretamente; Aqui basta adicionar o valor da expressão se for do mesmo tipo e
 		// 		adicionar uma tradução para esse nó
@@ -661,8 +718,30 @@ ATRIBUICAO:
 		Simbolo* s = tabelaSimbolos[$1.label];
 		s->simboloInicializado = true;
 	}
-	|
-	TK_VAR TK_ID '=' EXPRESSAO
+	| DECLARACAO '=' TK_INPUT
+	{	
+		// Ler o input do tipo da Declaração
+		// Aqui não tem como TK_INPUT virar expressão pois é necessário inferir o tipo de TK_INPUT
+
+		TIPO tipoExp = varTipo($1.label);
+		string labelExp = novaVarTemp(tipoExp);
+
+		if (tabelaFormatting.find(tipoExp) == tabelaFormatting.end())
+		{
+			semanticError("Não é possível ler o tipo " + tipoParaString(tipoExp) + " na entrada.");
+			YYABORT;
+		}
+
+		$$.label = $1.label;
+		$$.traducao = "\tscanf(\"" + tabelaFormatting[tipoExp] + "\", &" + labelExp + ");\n" + "\t" + varNomeReal($1.label) + " = " + labelExp + ";" + " // " + $1.label + "\n";
+
+		//  TODO: Quando integrar isso com os blocos, devem mudar a forma como o símbolo é inicializado; Deve-se usar o obterSímbolo no 
+		// lugar do tabelaSimbolos[$1.label]
+		Simbolo* s = tabelaSimbolos[$1.label];
+		s->simboloInicializado = true; 
+
+	}		
+	| TK_VAR TK_ID '=' EXPRESSAO
 	{
 		// OBS: Declaração implícita por inferência
 		if (varExiste($2.label))
@@ -919,6 +998,18 @@ void inicializarTabelaDeOperadores()
 
 }
 
+void inicializarTabelaFormatting()
+{
+	tabelaFormattingAdd(TIPO_INT, "%d");
+	tabelaFormattingAdd(TIPO_FLOAT, "%f");
+	tabelaFormattingAdd(TIPO_CHAR, "%c");
+}
+
+void tabelaFormattingAdd(TIPO tipo, string cFormato)
+{
+	tabelaFormatting[tipo] = cFormato;
+}
+
 // Usado para adicionar uma linha na tabela de operadores
 void tabelaDeOperadoresAdd(int operador, TIPO tipo)
 {
@@ -1055,6 +1146,7 @@ void initialize()
 
 	inicializarTabelaConversao();
 	inicializarTabelaDeOperadores();
+	inicializarTabelaFormatting();
 }
 
 int main(int argc, char* argv[])
