@@ -1,8 +1,16 @@
 int a = 3;
 
+int x  = 1;
+
 {
     int a = 10;
     int b = 5;
+    x = a;
+    {
+        int b = a;
+        int c = x;
+    }
+
     var c = a + b;
 }
 

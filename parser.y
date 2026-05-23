@@ -28,6 +28,7 @@ struct Simbolo
 {	
 	// Informações sobre o Simbolo
 	string labelReal;	// O nome "verdadeiro" da variável no código intermediário;
+	string labelUsuario; // O nome da variável no código fonte;
 	// TODO: Talvez seja melhor renomear essa var para somente "tipo"? já que em atributos também é somente tipo, ou fazer o contrário
 	TIPO tipoDeclarado; // Tipo que foi declarado a variavel.
 
@@ -68,7 +69,7 @@ int yylex(void);
 void yyerror(string);
 void semanticError(string MSG);
 string novaVarTemp(TIPO tipo);
-Simbolo* novaVar(TIPO tipo);
+Simbolo* novaVar(TIPO tipo, string labelUsuario);
 bool varExiste(string labelUsuario);
 bool varExisteNoEscopoAtual(string labelUsuario);
 bool varInicializada(string labelUsuario);
@@ -187,7 +188,7 @@ OUTPUT:
 			Simbolo* s = ordemDeclaracaoSimbolos.front();
 
 			// TODO: No futuro, verificar se esse tipo pode descrito facilmente assim no cod. intermediário
-			codigo_gerado += "\t" + tipoCodIntermediario(s->tipoDeclarado) + " " + s->labelReal + ";\n";
+			codigo_gerado += "\t" + tipoCodIntermediario(s->tipoDeclarado) + " " + s->labelReal + ";" + " // " + s->labelUsuario + "\n";
 
 			ordemDeclaracaoSimbolos.pop();
 		}
@@ -236,7 +237,7 @@ BLOCO:
 	'{' { empilharEscopo(); } COMANDOS '}'
 	{
 		desempilharEscopo();
-		$$.traducao =  $3.traducao;
+		$$.traducao = "\n\t// Inicio do bloco\n" + $3.traducao + "\t// Fim do bloco\n\n";
 	}
 ;
 
@@ -691,7 +692,7 @@ ATRIBUICAO:
 		{
 			$$.label = $2.label;			
 
-			Simbolo* s = novaVar($4.tipo);
+			Simbolo* s = novaVar($4.tipo, $2.label); // O tipo declarado é o tipo da expressão, por inferência
 			s->simboloInicializado = true;			
 
 			tabelaSimbolos.back()[$2.label] = s;						
@@ -715,7 +716,7 @@ DECLARACAO:
 			$$.label = $2.label;
 			$$.traducao = "";
 
-			Simbolo* s = novaVar($1.tipo);
+			Simbolo* s = novaVar($1.tipo, $2.label);
 
 			tabelaSimbolos.back()[$2.label] = s;
 			ordemDeclaracaoSimbolos.push(s);
@@ -741,12 +742,13 @@ string novaVarTemp(TIPO tipo)
 }
 
 // Cria uma nova variável de usuário
-Simbolo* novaVar(TIPO tipo)
+Simbolo* novaVar(TIPO tipo, string labelUsuario)
 {
 	var_qnt++;
 	Simbolo* s = new Simbolo;
 
 	s->labelReal = varPrefix + to_string(var_qnt);
+	s->labelUsuario = labelUsuario;
 	s->tipoDeclarado = tipo;
 	s->simboloInicializado = false;
 
