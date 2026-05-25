@@ -247,7 +247,30 @@ BLOCO:
 ;
 
 IF :
-	TK_IF '(' EXPRESSAO ')' { empilharEscopo(); } COMANDO
+	IF_PREFIXO COMANDO
+	{
+
+		desempilharEscopo();
+
+		string labelExp = novaVarTemp(TIPO_BOOL);
+
+		$$.traducao = $1.traducao + "\t" + labelExp + " = !" + $1.label + ";\n" + "\tif (" + labelExp + ") goto " + labelExp + "_fim;\n" + $2.traducao + "\t" + labelExp + "_fim:\n";
+
+	}
+	| IF_PREFIXO COMANDO ELSE
+	{
+
+		desempilharEscopo();
+
+		string labelExp = $3.label;
+
+		$$.traducao = $1.traducao + "\t" + labelExp + " = !" + $1.label + ";\n" + "\t" + "if (" + labelExp + ") goto " + labelExp + "_else;\n" + $2.traducao + "\t" + "goto " + labelExp + "_fim;\n" + $3.traducao;
+
+	}
+;
+
+IF_PREFIXO:
+	TK_IF '(' EXPRESSAO ')' { empilharEscopo(); } 
 	{
 		if ($3.tipo != TIPO_BOOL)
 		{
@@ -255,16 +278,24 @@ IF :
 			YYABORT;
 		}
 
+		$$.label = $3.label;
+		$$.traducao = $3.traducao;
+
+	}
+
+ELSE:
+	TK_ELSE { empilharEscopo(); } COMANDO 
+	{
 		desempilharEscopo();
 
 		string labelExp = novaVarTemp(TIPO_BOOL);
-
-		string codIntFinal = $3.traducao + "\t" + labelExp + " = !" + $3.label + ";\n" + "\t" + "if (" + labelExp + ") goto " + labelExp + "_fim;\n" + $6.traducao + "\t" + labelExp + "_fim:\n";
-
-		$$.traducao = codIntFinal;
+		
+		$$.traducao = "\t" + labelExp + "_else:\n" + $3.traducao + "\t" + labelExp + "_fim:\n";
+		$$.label = labelExp;
 	}
+;
 
-EXPRESSAO: 	
+EXPRESSAO:
 	TK_NUM
 	{
 		$$.label = novaVarTemp($1.tipo);
