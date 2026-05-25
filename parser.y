@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <utility>
 #include <vector>
+#include <fstream>
 
 using namespace std;
 
@@ -1193,26 +1194,78 @@ int main(int argc, char* argv[])
 	// Para aceitar todos os tipos de caractere
 	std::setlocale(LC_ALL, "");
 
+	bool useOut = false;		
+	bool inEncontrado = false;
+	string outFile;
+	yyin = stdin;
+
 	// programa de entrada
 	if (argc > 1)
-	{
-		yyin = fopen(argv[1], "r");
+	{	
+		// Lê todos os argumentos de entrada	
+		for (int i = 0; i < argc - 1; i++)
+		{			
+			char* argAtual = argv[i];
+			std::string argAtualStr(argv[i]);
 
-		if (!yyin)
-		{
-			perror("fopen");
-			return 1;
-		}
-	}
-	else
-	{
-		yyin = stdin;
+			// Encontrou a Entrada
+			if (argv[i][0] != '-' && !inEncontrado)
+			{
+				// TODO: Depois verificar se o arquivo tem o posfixo da linguagem fonte				
+				yyin = fopen(argv[i], "r");
+				inEncontrado = true;
+
+				if (!yyin)
+				{
+					printf("%s", ("O arquivo " + argAtualStr + " não existe ou não é um arquivo de código fonte válido").c_str());
+					return 1;
+				}
+
+				continue;
+			}
+
+			// Encontrou uma flag
+			if (argv[i][0] == '-')
+			{				
+				// Comando de saída (output)				
+				if (strcmp(argAtual, "-o") == 0 || strcmp(argAtual, "-out") == 0 || strcmp(argAtual, "-output") == 0)
+				{
+					// Verifica se há um arquivo acompanhando o -o
+					if (i + 1 < argc - 1 && argv[i + 1][0] != '-')
+					{
+						outFile = argv[i + 1];
+						useOut = true;
+
+						continue;
+					}
+					else
+					{
+						printf("O argumento -output precisa de um caminho de arquivo\n");
+						return 1;
+					}
+				}
+
+			}
+		}		
 	}
 
 	initialize();
 
 	if (yyparse() == 0)
-		cout << codigo_gerado;
+	{
+		if (useOut)
+		{
+			printf("%s", outFile.c_str());
+
+			std::ofstream output(outFile);
+			output << codigo_gerado;
+			output.close();
+		}
+		else
+		{
+			cout << codigo_gerado;
+		}
+	}		
 
 	return 0;
 }
