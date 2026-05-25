@@ -1197,13 +1197,13 @@ int main(int argc, char* argv[])
 	bool useOut = false;		
 	bool inEncontrado = false;
 	string outFile;
-	yyin = stdin;
+	yyin = stdin;	
 
 	// programa de entrada
 	if (argc > 1)
 	{	
 		// Lê todos os argumentos de entrada	
-		for (int i = 0; i < argc - 1; i++)
+		for (int i = 1; i < argc; i++)
 		{			
 			char* argAtual = argv[i];
 			std::string argAtualStr(argv[i]);
@@ -1217,7 +1217,7 @@ int main(int argc, char* argv[])
 
 				if (!yyin)
 				{
-					printf("%s", ("O arquivo " + argAtualStr + " não existe ou não é um arquivo de código fonte válido").c_str());
+					printf("%s", ("O arquivo " + argAtualStr + " não existe ou não é um arquivo de código fonte válido\n").c_str());
 					return 1;
 				}
 
@@ -1231,11 +1231,13 @@ int main(int argc, char* argv[])
 				if (strcmp(argAtual, "-o") == 0 || strcmp(argAtual, "-out") == 0 || strcmp(argAtual, "-output") == 0)
 				{
 					// Verifica se há um arquivo acompanhando o -o
-					if (i + 1 < argc - 1 && argv[i + 1][0] != '-')
-					{
+					// Verifica se não é o último argumento (se existe 1 depois dele) e se esse próximo argumento não é uma flag
+					if (i + 1 <= argc - 1 && argv[i + 1][0] != '-')
+					{						
 						outFile = argv[i + 1];
 						useOut = true;
 
+						i++;
 						continue;
 					}
 					else
@@ -1254,9 +1256,7 @@ int main(int argc, char* argv[])
 	if (yyparse() == 0)
 	{
 		if (useOut)
-		{
-			printf("%s", outFile.c_str());
-
+		{			
 			std::ofstream output(outFile);
 			output << codigo_gerado;
 			output.close();
