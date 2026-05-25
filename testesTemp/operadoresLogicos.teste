@@ -1,10 +1,12 @@
 int a;
 int b;
 float x;
-bool resultado;
+bool resultado0;
+bool resultado1;
 bool resultado2;
 a = 10;
 b = 8;
 x = 4.0;
-resultado = (a > b) && (x <= 5.0);
-resultado2 = !(a == b);
+resultado0 = (a > b) or (x <= 5.0);
+resultado1 = (a > b) and (x <= 5.0);
+resultado2 = not(a == b);

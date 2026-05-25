@@ -7,6 +7,7 @@
 #include <locale>
 #include <cstdlib>
 #include <utility>
+#include <vector>
 
 using namespace std;
 
@@ -27,6 +28,7 @@ struct Simbolo
 {	
 	// Informações sobre o Simbolo
 	string labelReal;	// O nome "verdadeiro" da variável no código intermediário;
+	string labelUsuario; // O nome da variável no código fonte;
 	// TODO: Talvez seja melhor renomear essa var para somente "tipo"? já que em atributos também é somente tipo, ou fazer o contrário
 	TIPO tipoDeclarado; // Tipo que foi declarado a variavel.
 
@@ -67,8 +69,9 @@ int yylex(void);
 void yyerror(string);
 void semanticError(string MSG);
 string novaVarTemp(TIPO tipo);
-Simbolo* novaVar(TIPO tipo);
+Simbolo* novaVar(TIPO tipo, string labelUsuario);
 bool varExiste(string labelUsuario);
+bool varExisteNoEscopoAtual(string labelUsuario);
 bool varInicializada(string labelUsuario);
 string varNomeReal(string labelUsuario);
 TIPO varTipo(string labelUsuario);
@@ -85,6 +88,9 @@ string ConversaoCodIntermediario(string labelA, TIPO tipoB, string& labelB);
 bool operadorFuncionaEmTipo(int operadorOuToken, TIPO tipo);
 void inicializarTabelaDeOperadores();
 void tabelaDeOperadoresAdd(int operador, TIPO tipo);
+void empilharEscopo();
+void desempilharEscopo();
+Simbolo* obterSimbolo(string labelUsuario);
 void inicializarTabelaFormatting();
 void tabelaFormattingAdd(TIPO tipo, string cFormato);
 
@@ -96,8 +102,8 @@ int linha = 1; // Contador da linha do comando; Atualizado no lexer
 int coluna = 0; // Contador de caracteres do comando; Atualizado no lexer
 
 string codigo_gerado; // Código intermediário gerado pelo compilador
-unordered_map<string, Simbolo*> tabelaSimbolos; // Tabela de símbolos
-queue<string> ordemDeclaracaoSimbolos; // A ordem de declaração dos símbolos da tabela; TODO: Essa estrutura ainda precisa existir? Remover depois
+vector<unordered_map<string, Simbolo*>> tabelaSimbolos; // Tabela de símbolos
+queue<Simbolo*> ordemDeclaracaoSimbolos; // A ordem de declaração dos símbolos da tabela; TODO: Essa estrutura ainda precisa existir? Remover depois
  
 queue<TIPO> tipoDosTemporarios; // O tipo de cada variável temporária; Está em ordem de declaração
 
@@ -163,7 +169,7 @@ unordered_map<TIPO, string> tabelaFormatting;
 %%
 
 OUTPUT: 
-	PROGRAMA_MINIMO
+	COMANDOS
 	{
 		// TODO: Depois separar em funções
 
@@ -186,12 +192,10 @@ OUTPUT:
 		codigo_gerado += "\n\t// Variaveis Globais\n";				
 		while (!ordemDeclaracaoSimbolos.empty())
 		{			 
-			string labelVar = ordemDeclaracaoSimbolos.front();
-			Simbolo* s = tabelaSimbolos[labelVar];
+			Simbolo* s = ordemDeclaracaoSimbolos.front();
 
-			codigo_gerado += "\t// " + labelVar + ":\n";
 			// TODO: No futuro, verificar se esse tipo pode descrito facilmente assim no cod. intermediário
-			codigo_gerado += "\t" + tipoCodIntermediario(s->tipoDeclarado) + " " + s->labelReal + ";" + " // " + tipoParaString(s->tipoDeclarado) + " " + labelVar + "\n";
+			codigo_gerado += "\t" + tipoCodIntermediario(s->tipoDeclarado) + " " + s->labelReal + ";" + " // " + s->labelUsuario + "\n";
 
 			ordemDeclaracaoSimbolos.pop();
 		}
@@ -205,13 +209,13 @@ OUTPUT:
 	}
 ;
 
-PROGRAMA_MINIMO:
+COMANDOS:
 	COMANDO
 	{
 		$$.traducao = $1.traducao;
 	}
 	|
-	PROGRAMA_MINIMO COMANDO
+	COMANDOS COMANDO
 	{
 		$$.traducao = $1.traducao + $2.traducao;
 	}
@@ -230,7 +234,11 @@ COMANDO:
 	{
 		$$.traducao = $1.traducao;
 	}
-	| TK_OUTPUT EXPRESSAO ';'
+	| BLOCO
+	{
+		$$.traducao = $1.traducao;
+	}
+  | TK_OUTPUT EXPRESSAO ';'
 	{
 		TIPO tipoExp = $2.tipo;
 
@@ -240,7 +248,15 @@ COMANDO:
 			YYABORT;
 		}
 
-		$$.traducao = $2.traducao + "\tprintf(\"" + tabelaFormatting[tipoExp] + "\\n\", " + $2.label + ");\n";
+		$$.traducao = $2.traducao + "\tprintf(\"" + tabelaFormatting[tipoExp] + "\\n\", " + $2.label + ");\n";    
+  }
+;
+
+BLOCO:
+	'{' { empilharEscopo(); } COMANDOS '}'
+	{
+		desempilharEscopo();
+		$$.traducao = "\n\t// Inicio do bloco\n" + $3.traducao + "\t// Fim do bloco\n\n";
 	}
 ;
 
@@ -669,7 +685,7 @@ ATRIBUICAO:
 		$$.label = $1.label;
 		$$.traducao = $3.traducao + "\t" + tradConversao + varNomeReal($1.label) + " = " + labelExp + ";" + " // " + $1.label + "\n";
 
-		Simbolo* s = tabelaSimbolos[$1.label];
+		Simbolo* s = obterSimbolo($1.label);
 		s->simboloInicializado = true;		
 	}
 	| TK_ID '=' TK_INPUT
@@ -715,7 +731,7 @@ ATRIBUICAO:
 		$$.label = $1.label;
 		$$.traducao = $3.traducao + "\t" + tradConversao + varNomeReal($1.label) + " = " + labelExp + ";" + " // " + $1.label + "\n";
 
-		Simbolo* s = tabelaSimbolos[$1.label];
+		Simbolo* s = obterSimbolo($1.label);
 		s->simboloInicializado = true;
 	}
 	| DECLARACAO '=' TK_INPUT
@@ -744,7 +760,7 @@ ATRIBUICAO:
 	| TK_VAR TK_ID '=' EXPRESSAO
 	{
 		// OBS: Declaração implícita por inferência
-		if (varExiste($2.label))
+		if (varExisteNoEscopoAtual($2.label))
 		{
 			semanticError("Simbolo ja declarado -> '" + $2.label + "'. Nao e possivel declarar novamente, escolha outro nome.");
 			YYABORT;
@@ -753,11 +769,11 @@ ATRIBUICAO:
 		{
 			$$.label = $2.label;			
 
-			Simbolo* s = novaVar($4.tipo);
+			Simbolo* s = novaVar($4.tipo, $2.label); // O tipo declarado é o tipo da expressão, por inferência
 			s->simboloInicializado = true;			
 
-			tabelaSimbolos[$2.label] = s;						
-			ordemDeclaracaoSimbolos.push($2.label);
+			tabelaSimbolos.back()[$2.label] = s;						
+			ordemDeclaracaoSimbolos.push(s);
 			
 			$$.traducao = $4.traducao + "\t" + varNomeReal($2.label) + " = " + $4.label + ";" + " // " + $2.label + "\n";
 		}
@@ -767,9 +783,9 @@ ATRIBUICAO:
 DECLARACAO:
 	TK_TIPO TK_ID
 	{
-		if (varExiste($2.label))
+		if (varExisteNoEscopoAtual($2.label))
 		{
-			semanticError("Simbolo ja declarado -> '" + $1.label + "'. Nao e possivel declarar novamente, escolha outro nome.");
+			semanticError("Simbolo ja declarado -> '" + $2.label + "'. Nao e possivel declarar novamente, escolha outro nome.");
 			YYABORT;
 		}
 		else
@@ -777,10 +793,10 @@ DECLARACAO:
 			$$.label = $2.label;
 			$$.traducao = "";
 
-			Simbolo* s = novaVar($1.tipo);
+			Simbolo* s = novaVar($1.tipo, $2.label);
 
-			tabelaSimbolos[$2.label] = s;
-			ordemDeclaracaoSimbolos.push($2.label);
+			tabelaSimbolos.back()[$2.label] = s;
+			ordemDeclaracaoSimbolos.push(s);
 		}
 	}
 ;
@@ -803,49 +819,74 @@ string novaVarTemp(TIPO tipo)
 }
 
 // Cria uma nova variável de usuário
-Simbolo* novaVar(TIPO tipo)
+Simbolo* novaVar(TIPO tipo, string labelUsuario)
 {
 	var_qnt++;
 	Simbolo* s = new Simbolo;
 
 	s->labelReal = varPrefix + to_string(var_qnt);
+	s->labelUsuario = labelUsuario;
 	s->tipoDeclarado = tipo;
 	s->simboloInicializado = false;
 
 	return s;
 }
 
-// Usado para verificar se existe uma variável de nome labelUsuario
-bool varExiste(string labelUsuario)
+
+void empilharEscopo()
 {
-	if (tabelaSimbolos.find(labelUsuario) != tabelaSimbolos.end())
+	tabelaSimbolos.push_back(unordered_map<string, Simbolo*>());
+}
+
+void desempilharEscopo()
+{
+	tabelaSimbolos.pop_back();
+}
+
+Simbolo* obterSimbolo(string labelUsuario)
+{
+	for(auto it = tabelaSimbolos.rbegin(); it != tabelaSimbolos.rend(); ++it)
 	{
-		return true;
+		if (it->find(labelUsuario) != it->end())
+		{
+			return it->at(labelUsuario);
+		}
 	}
-	return false;
+	return NULL;
+}
+
+// Usado para verificar se existe uma variável de nome labelUsuario no escopo atual(bloco atual, função atual, etc.)
+bool varExisteNoEscopoAtual(string labelUsuario)
+{
+	return tabelaSimbolos.back().find(labelUsuario) != tabelaSimbolos.back().end();
+}
+
+// Usado para verificar se existe uma variável de nome labelUsuario
+bool varExiste(string labelUsuario){
+	return obterSimbolo(labelUsuario) != NULL;
 }
 
 // Usado para verificar se uma variável que EXISTA já foi inicializada
 // OBS: Não verifica se a variável realmente existe
 bool varInicializada(string labelUsuario)
 {
-	Simbolo* s = tabelaSimbolos[labelUsuario];
-	return s-> simboloInicializado;
+	Simbolo* s = obterSimbolo(labelUsuario);
+	return s ? s-> simboloInicializado : false;
 }
 
 // Usado para retornar o nome real de uma variável que EXISTA na tabela de símbolos
 // OBS: Não verifica se o símbolo existe ou não
 string varNomeReal(string labelUsuario)
 {
-	Simbolo* s = tabelaSimbolos[labelUsuario];
-	return s->labelReal;
+	Simbolo* s = obterSimbolo(labelUsuario);
+	return s ? s->labelReal : "";
 }
 
 // Usado para ver tipo do simbolo. 
 // OBS: Não verifica se o símbolo existe ou não
 TIPO varTipo(string labelUsuario)
 {
-	Simbolo* s = tabelaSimbolos[labelUsuario];
+	Simbolo* s = obterSimbolo(labelUsuario);
 	return s->tipoDeclarado;
 }
 
@@ -1146,7 +1187,8 @@ void initialize()
 
 	inicializarTabelaConversao();
 	inicializarTabelaDeOperadores();
-	inicializarTabelaFormatting();
+  inicializarTabelaFormatting();
+  empilharEscopo();		
 }
 
 int main(int argc, char* argv[])

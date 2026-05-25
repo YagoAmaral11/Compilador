@@ -18,6 +18,9 @@ BOOL (true|false)
 INT [-]?{DIGITO}+
 FLOAT [-]?{DIGITO}+\.{DIGITO}+(([eE])([-])?{DIGITO}+)?
 ID {LETRA}({DIGITO}|{LETRA})*
+AND (&&|and)
+OR (\|\||or)
+NOT (!|not)
 
 %%
 
@@ -25,9 +28,9 @@ ID {LETRA}({DIGITO}|{LETRA})*
 "\n"		{ linha++; coluna = 0; }
 {DELIM} 	{ coluna += strlen(yytext); }
 
-"&&"        { coluna += 2; return OP_AND; }
-"||"        { coluna += 2; return OP_OR; }
-"!"         { coluna += 1; return OP_NOT; }
+{AND}        { coluna += 2; return OP_AND; }
+{OR}        { coluna += 2; return OP_OR; }
+{NOT}         { coluna += 1; return OP_NOT; }
 "=="         { coluna += 2; return OP_IGUAL; }
 "!="     { coluna += 2; return OP_DIFERENTE; }
 "<="   { coluna += 2; return OP_MENOR_IGUAL; }
@@ -38,6 +41,7 @@ ID {LETRA}({DIGITO}|{LETRA})*
 [=]         { coluna++; return *yytext; }
 [+-/*]		{ coluna++; return *yytext; }
 [()]        { coluna++; return *yytext; }
+[{}]        { coluna++; return *yytext; }
 [;]         { coluna++; return *yytext; }
 
 "int"       { coluna += strlen(yytext); yylval.tipo = TIPO_INT; return TK_TIPO; }
