@@ -103,7 +103,7 @@ int coluna = 0; // Contador de caracteres do comando; Atualizado no lexer
 
 string codigo_gerado; // Código intermediário gerado pelo compilador
 vector<unordered_map<string, Simbolo*>> tabelaSimbolos; // Tabela de símbolos
-queue<Simbolo*> ordemDeclaracaoSimbolos; // A ordem de declaração dos símbolos da tabela; TODO: Essa estrutura ainda precisa existir? Remover depois
+queue<Simbolo*> ordemDeclaracaoSimbolos; // Uma lista com todos os símbolos, de todos os escopos, que foram declarados pelo usuário. TODO: Renomear essa variável para melhor condizer com sua função
  
 queue<TIPO> tipoDosTemporarios; // O tipo de cada variável temporária; Está em ordem de declaração
 
@@ -189,7 +189,7 @@ OUTPUT:
 			i++;
 		}						
 		
-		codigo_gerado += "\n\t// Variaveis Globais\n";				
+		codigo_gerado += "\n\t// Variaveis De Usuario\n";				
 		while (!ordemDeclaracaoSimbolos.empty())
 		{			 
 			Simbolo* s = ordemDeclaracaoSimbolos.front();
@@ -202,7 +202,7 @@ OUTPUT:
 		codigo_gerado += "\n";		
 		
 
-		codigo_gerado += "\t// Inicio do codigo\n";
+		codigo_gerado += "\t// Codigo do Usuario\n";
 		codigo_gerado += $1.traducao;
 
 		codigo_gerado += "\n\treturn 0;" "\n}\n";
@@ -238,18 +238,18 @@ COMANDO:
 	{
 		$$.traducao = $1.traducao;
 	}
-  | TK_OUTPUT EXPRESSAO ';'
+    | TK_OUTPUT EXPRESSAO ';'
 	{
 		TIPO tipoExp = $2.tipo;
 
 		if (tabelaFormatting.find(tipoExp) == tabelaFormatting.end())
 		{
-			semanticError("Não é possível ler o tipo " + tipoParaString(tipoExp) + " na entrada.");
+			semanticError("Não é possível imprimir o tipo " + tipoParaString(tipoExp) + " na entrada.");
 			YYABORT;
 		}
 
 		$$.traducao = $2.traducao + "\tprintf(\"" + tabelaFormatting[tipoExp] + "\\n\", " + $2.label + ");\n";    
-  }
+  	}
 ;
 
 BLOCO:
@@ -703,12 +703,9 @@ ATRIBUICAO:
 
 		$$.label = $1.label;
 		$$.traducao = "\tscanf(\"" + tabelaFormatting[tipoExp] + "\", &" + labelExp + ");\n" + "\t" + varNomeReal($1.label) + " = " + labelExp + ";" + " // " + $1.label + "\n";
-
-		//  TODO: Quando integrar isso com os blocos, devem mudar a forma como o símbolo é inicializado; Deve-se usar o obterSímbolo no 
-		// lugar do tabelaSimbolos[$1.label]
-		Simbolo* s = tabelaSimbolos[$1.label];
+		
+		Simbolo* s = obterSimbolo($1.label);
 		s->simboloInicializado = true; 
-
 	}	
 	| DECLARACAO '=' EXPRESSAO
 	{
@@ -751,9 +748,7 @@ ATRIBUICAO:
 		$$.label = $1.label;
 		$$.traducao = "\tscanf(\"" + tabelaFormatting[tipoExp] + "\", &" + labelExp + ");\n" + "\t" + varNomeReal($1.label) + " = " + labelExp + ";" + " // " + $1.label + "\n";
 
-		//  TODO: Quando integrar isso com os blocos, devem mudar a forma como o símbolo é inicializado; Deve-se usar o obterSímbolo no 
-		// lugar do tabelaSimbolos[$1.label]
-		Simbolo* s = tabelaSimbolos[$1.label];
+		Simbolo* s = obterSimbolo($1.label);
 		s->simboloInicializado = true; 
 
 	}		
@@ -843,6 +838,8 @@ void desempilharEscopo()
 	tabelaSimbolos.pop_back();
 }
 
+// Procura o símbolo de labelUsuario no escopo mais próximo; Não verifica se o símbolo realmente existe;
+// Se o Símbolo não existir, é retornado NULL
 Simbolo* obterSimbolo(string labelUsuario)
 {
 	for(auto it = tabelaSimbolos.rbegin(); it != tabelaSimbolos.rend(); ++it)
