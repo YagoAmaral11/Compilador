@@ -143,7 +143,7 @@ unordered_map<TIPO, string> tabelaFormatting;
 
 /* TOKEN PARA OS TIPOS DIFERENTES */
 /* OBS: Cada novo tipo adicionado, deve-se criar um token desses e alterar o yylval.tipo para o token correspondente no lexer  */
-/* 		É também necessário, para cada tipo novo, alterar: tipoCodIntermediario, tipoParaString, inicializarTabelaConversao e inicializarTabelaDeOperadores 	*/
+/* 		É também necessário, para cada tipo novo, alterar: tipoCodIntermediario, tipoParaString, inicializarTabelaConversao, inicializarTabelaDeOperadores e inicializarTabelaFormatting 	*/
 %token TIPO_INT
 %token TIPO_FLOAT
 %token TIPO_CHAR
