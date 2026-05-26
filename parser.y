@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <utility>
 #include <vector>
+#include <deque>
 
 using namespace std;
 
@@ -48,6 +49,24 @@ enum class TipoDeConversao
 struct ConversaoInfo
 {
 	TipoDeConversao tipo;	
+};
+
+enum class TipoComando
+{
+	IF_ELSE,
+	FOR,
+	WHILE,
+	SWITCH,
+	CASE,
+	DEFAULT,
+	DO
+};
+
+struct Label
+{
+	string labelInicio; // Label para o início do bloco de código (usado para controle de fluxo)
+	string labelFim; // Label para o fim do bloco de código (usado para controle de fluxo)
+	TipoComando tipoComando; // O tipo do comando de controle de fluxo (if, for, etc.) relacionado a essa label; Usado para diferenciar os tipos de comandos de controle de fluxo
 };
 
 // Usado na tabela de conversão para gerar uma hash para um pair<T1,T2>, para que seja possível
@@ -91,10 +110,15 @@ void tabelaDeOperadoresAdd(int operador, TIPO tipo);
 void empilharEscopo();
 void desempilharEscopo();
 Simbolo* obterSimbolo(string labelUsuario);
+Label* novaLabel(TipoComando tipoComando);
+//void empilharLabel(string labelInicio, string labelFim);
+Label* desempilharLabel();
 
 // Variáveis
 int var_temp_qnt; // Contador de variáveis temporárias
 int var_qnt; // Contador de variáveis globais não temporárias criadas
+
+int label_qnt; // Contador de labels criadas
 
 int linha = 1; // Contador da linha do comando; Atualizado no lexer
 int coluna = 0; // Contador de caracteres do comando; Atualizado no lexer
@@ -115,6 +139,8 @@ unordered_map<pair<TIPO, TIPO>, ConversaoInfo, pair_hash> tabelaConversao;
 // OBS²: Note que essa não é uma tabela de conversões; Ela apenas verifica, para um par de variáveis de um tipo, se o operador passado pode ser usado
 unordered_map<pair<int, TIPO>, bool, pair_hash> tabelaOperadores;
 
+deque<Label*> tabelaLabels; // Pilha de labels para controle de fluxo (while, for, etc.);
+ 
 // Macros
 #define tmpVarPrefix "tmp"
 #define varPrefix "var"
@@ -145,6 +171,9 @@ unordered_map<pair<int, TIPO>, bool, pair_hash> tabelaOperadores;
 
 
 %start OUTPUT
+
+%nonassoc TK_NO_ELSE // Usado para marcar o final de um comando if sem else, para resolver o "dangling else problem"; O TK_NO_ELSE é não associativo, ou seja, ele não pode ser associado a nenhum else; Assim, o else mais próximo de um if sempre será associado a ele, e não a um if mais distante
+%nonassoc TK_ELSE // Para resolver o "dangling else problem"; O TK_ELSE é não associativo, ou seja, ele só pode ser associado ao if mais próximo; Assim, o else mais próximo de um if sempre será associado a ele, e não a um if mais distante
 
 %right '='
 
@@ -236,6 +265,10 @@ COMANDO:
 	{
 		$$.traducao = $1.traducao;
 	}
+	| FOR 
+	{
+		$$.traducao = $1.traducao;
+	}
 ;
 
 BLOCO:
@@ -244,17 +277,24 @@ BLOCO:
 		desempilharEscopo();
 		$$.traducao = "\n\t// Inicio do bloco\n" + $3.traducao + "\t// Fim do bloco\n\n";
 	}
+	| '{' '}' { empilharEscopo(); }
+	{
+		desempilharEscopo();
+		$$.traducao = "\n\t// Bloco vazio\n\n";
+	}
 ;
 
 IF :
-	IF_PREFIXO COMANDO
+	IF_PREFIXO COMANDO %prec TK_NO_ELSE
 	{
 
 		desempilharEscopo();
 
+		Label* L = desempilharLabel();
+
 		string labelExp = novaVarTemp(TIPO_BOOL);
 
-		$$.traducao = $1.traducao + "\t" + labelExp + " = !" + $1.label + ";\n" + "\tif (" + labelExp + ") goto " + labelExp + "_fim;\n" + $2.traducao + "\t" + labelExp + "_fim:\n";
+		$$.traducao = $1.traducao + "\t" + labelExp + " = !" + $1.label + ";\n" + "\tif (" + labelExp + ")\n\t\tgoto " + L->labelFim + ";\n" + $2.traducao + L->labelFim + ":\n";
 
 	}
 	| IF_PREFIXO COMANDO ELSE
@@ -262,15 +302,17 @@ IF :
 
 		desempilharEscopo();
 
-		string labelExp = $3.label;
+		desempilharLabel();
 
-		$$.traducao = $1.traducao + "\t" + labelExp + " = !" + $1.label + ";\n" + "\t" + "if (" + labelExp + ") goto " + labelExp + "_else;\n" + $2.traducao + "\t" + "goto " + labelExp + "_fim;\n" + $3.traducao;
+		string labelExp = novaVarTemp(TIPO_BOOL);
+
+		$$.traducao = $1.traducao + "\t" + labelExp + " = !" + $1.label + ";\n" + "\tif (" + labelExp + ")\n\t\tgoto " + $3.label + ";\n" + $2.traducao + $3.traducao;
 
 	}
 ;
 
 IF_PREFIXO:
-	TK_IF '(' EXPRESSAO ')' { empilharEscopo(); } 
+	TK_IF '(' EXPRESSAO ')' { empilharEscopo(); novaLabel(TipoComando::IF_ELSE);} 
 	{
 		if ($3.tipo != TIPO_BOOL)
 		{
@@ -282,16 +324,37 @@ IF_PREFIXO:
 		$$.traducao = $3.traducao;
 
 	}
+;
 
 ELSE:
-	TK_ELSE { empilharEscopo(); } COMANDO 
+	TK_ELSE { empilharEscopo(); novaLabel(TipoComando::IF_ELSE); } COMANDO 
 	{
 		desempilharEscopo();
 
-		string labelExp = novaVarTemp(TIPO_BOOL);
+		Label* L = desempilharLabel();
 		
-		$$.traducao = "\t" + labelExp + "_else:\n" + $3.traducao + "\t" + labelExp + "_fim:\n";
-		$$.label = labelExp;
+		$$.traducao = "\tgoto " + L->labelFim + ";\n" + L->labelInicio + ":\n" + $3.traducao + L->labelFim + ":\n";
+		$$.label = L->labelInicio;
+	}
+;
+
+FOR: 
+	TK_FOR { empilharEscopo(); novaLabel(TipoComando::FOR); } '(' ATRIBUICAO ';' EXPRESSAO ';' ATRIBUICAO ')' COMANDO
+	{
+		if ($6.tipo != TIPO_BOOL)
+		{
+			semanticError("Erro de tipo -> A expressão do for deve ser do tipo booleano; Tipo '" + tipoParaString($6.tipo) + "' encontrado.");
+			YYABORT;
+		}
+
+		desempilharEscopo();
+
+		Label* L = desempilharLabel();
+
+		string labelExp = novaVarTemp(TIPO_BOOL);
+
+		$$.traducao = $4.traducao + L->labelInicio + ":\n" + $6.traducao + "\t" + labelExp + " = !" + $6.label + ";\n" + "\tif (" + labelExp + ")\n\t\tgoto " + L->labelFim + ";\n" + $10.traducao + $8.traducao + "\tgoto " + L->labelInicio + ";\n" + L->labelFim + ":\n";
+
 	}
 ;
 
@@ -818,6 +881,34 @@ void empilharEscopo()
 void desempilharEscopo()
 {
 	tabelaSimbolos.pop_back();
+}
+
+Label* novaLabel(TipoComando tipo)
+{
+	Label* label = new Label();
+
+	if(tipo == TipoComando::IF_ELSE)
+	{
+	label->labelInicio = "label_Else_" + to_string(label_qnt);
+	label->labelFim = "label_Fim_" + to_string(label_qnt);
+	}
+	else
+	{
+		label->labelInicio = "label_Inicio_" + to_string(label_qnt);
+		label->labelFim = "label_Fim_" + to_string(label_qnt);
+	}
+		
+	label->tipoComando = tipo;
+	label_qnt++;
+	tabelaLabels.push_back(label);
+	return label;
+}
+
+Label* desempilharLabel()
+{
+	Label* label = tabelaLabels.back();
+	tabelaLabels.pop_back();
+	return label;
 }
 
 Simbolo* obterSimbolo(string labelUsuario)
