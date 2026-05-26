@@ -14,6 +14,7 @@ CARACTER ([^\'\\\n]|\\.)
 
 DELIM {ESPACO}+
 CHAR \'{CARACTER}\'
+STRING \"({CARACTER})*\"
 BOOL (true|false)
 INT [-]?{DIGITO}+
 FLOAT [-]?{DIGITO}+\.{DIGITO}+(([eE])([-])?{DIGITO}+)?
@@ -60,6 +61,7 @@ NOT (!|not)
 "float"     { coluna += strlen(yytext); yylval.tipo = TIPO_FLOAT; return TK_TIPO; }
 "char"      { coluna += strlen(yytext); yylval.tipo = TIPO_CHAR; return TK_TIPO; }
 "bool"      { coluna += strlen(yytext); yylval.tipo = TIPO_BOOL; return TK_TIPO; }
+"string"    { coluna += strlen(yytext); yylval.tipo = TIPO_STRING; return TK_TIPO; }
 "var"       { coluna += strlen(yytext); return TK_VAR; }
 "input"     { coluna += strlen(yytext); return TK_INPUT; }
 "output"     { coluna += strlen(yytext); return TK_OUTPUT; }
@@ -67,6 +69,7 @@ NOT (!|not)
 {INT}		{ coluna += strlen(yytext); yylval.label = yytext; yylval.tipo = TIPO_INT; return TK_NUM; }
 {FLOAT}		{ coluna += strlen(yytext); yylval.label = yytext; yylval.tipo = TIPO_FLOAT; return TK_NUM; }
 {CHAR}		{ coluna += strlen(yytext); yylval.label = yytext; yylval.tipo = TIPO_CHAR; return TK_NUM; }
+{STRING}    { coluna += strlen(yytext); yylval.label = yytext; yylval.tipo = TIPO_STRING; return TK_NUM; }
 {BOOL}		{ coluna += strlen(yytext); if('t' == *yytext){ yylval.label = to_string(BOOL_TRUE); } else{ yylval.label = to_string(BOOL_FALSE); } yylval.tipo = TIPO_BOOL; return TK_NUM; }
 {ID}        { coluna += strlen(yytext); yylval.label = yytext; return TK_ID; }
 
