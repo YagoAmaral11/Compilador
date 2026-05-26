@@ -1,4 +1,6 @@
 # Versão do makefile para o Windows. Use make <comando> -f mkwin
+# OBS: Versão desatualizada, sem o comando run
+# rev 2.0
 
 CXXFLAGS = -Wall -Wunused-function -Wno-free-nonheap-object -finput-charset=UTF-8 -fexec-charset=UTF-8
 

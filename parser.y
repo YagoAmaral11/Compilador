@@ -1185,8 +1185,8 @@ void initialize()
 
 	inicializarTabelaConversao();
 	inicializarTabelaDeOperadores();
-  inicializarTabelaFormatting();
-  empilharEscopo();		
+  	inicializarTabelaFormatting();
+ 	empilharEscopo();		
 }
 
 int main(int argc, char* argv[])
