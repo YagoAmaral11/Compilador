@@ -9,12 +9,14 @@
 #include <utility>
 #include <vector>
 #include <fstream>
+#include <cstring>
 
 using namespace std;
 
 extern FILE* yyin; // yyin é o arquivo de entrada do flex; ao alterar, é possível redirecionar o fluxo da entrada do código fonte
 #define YYSTYPE atributos // YYSTYPE é o tipo de valor usado para cada token da árvore sintática; É diferente do valor numérico gerador por %token
 #define TIPO int // É um macro para diferenciar o tipo da variável; É possível usar os tokens de tipo (%token TIPO_...) pq os dois são int no fim
+#define str_length_suffix "_strlen" // Usado ao declarar string dinâmicas; Um inteiro de mesmo nome da variável usada para guardar a string terá esse sufixo
 
 // Structs
 // TODO: Criar estruturas melhores para identificar os Tokens
@@ -22,7 +24,7 @@ struct atributos
 {
 	string label; // "Endereço" dessa variável; O nome da variável que carrega o valor dessa árvore sintática
 	string traducao; // A tradução dessa árvore sintática para o código intermediário
-	TIPO tipo;	// Tipo do token
+	TIPO tipo;	// Tipo do token	
 };
 
 struct Simbolo
@@ -65,6 +67,13 @@ struct pair_hash
     }
 };
 
+// Usado em uma tabela para guardar informações sobre uma string, seja ela de usuário ou não
+struct StringInfo
+{
+	bool éDinâmica;
+	int tamanho;
+};
+
 // Declarações de funções
 int yylex(void);
 void yyerror(string);
@@ -94,6 +103,8 @@ void desempilharEscopo();
 Simbolo* obterSimbolo(string labelUsuario);
 void inicializarTabelaFormatting();
 void tabelaFormattingAdd(TIPO tipo, string cFormato);
+bool tipoDiretoCodIntermediario(TIPO tipo);
+StringInfo* novaString();
 
 // Variáveis
 int var_temp_qnt; // Contador de variáveis temporárias
@@ -123,6 +134,9 @@ unordered_map<pair<int, TIPO>, bool, pair_hash> tabelaOperadores;
 // OBS: as booleanas serão um problema, pois devem ser lidas como uma string (true/false) e transformadas em seu valor inteiro 1 ou 0
 unordered_map<TIPO, string> tabelaFormatting;
 
+// Usado para guardar se uma string é dinâmica ou não e se seu tamanho é conhecido em tempo de compilação
+unordered_map<string, StringInfo*> tabelaStrings;
+
 // Macros
 #define tmpVarPrefix "tmp"
 #define varPrefix "var"
@@ -144,11 +158,12 @@ unordered_map<TIPO, string> tabelaFormatting;
 
 /* TOKEN PARA OS TIPOS DIFERENTES */
 /* OBS: Cada novo tipo adicionado, deve-se criar um token desses e alterar o yylval.tipo para o token correspondente no lexer  */
-/* 		É também necessário, para cada tipo novo, alterar: tipoCodIntermediario, tipoParaString, inicializarTabelaConversao, inicializarTabelaDeOperadores e inicializarTabelaFormatting 	*/
+/* 		É também necessário, para cada tipo novo, alterar: tipoCodIntermediario, tipoDiretoCodInterrmediario, tipoParaString, inicializarTabelaConversao, inicializarTabelaDeOperadores e inicializarTabelaFormatting 	*/
 %token TIPO_INT
 %token TIPO_FLOAT
 %token TIPO_CHAR
 %token TIPO_BOOL
+%token TIPO_STRING
 
 
 %start OUTPUT
@@ -174,7 +189,7 @@ OUTPUT:
 	{
 		// TODO: Depois separar em funções
 
-		codigo_gerado = "#include <stdio.h>\n\n"
+		codigo_gerado = "#include <stdio.h>\n#include <string.h>\n"
 						"int main(void) \n{\n";						
 
 
@@ -183,8 +198,32 @@ OUTPUT:
 		while (!tipoDosTemporarios.empty())
 		{			 
 			TIPO tipoVar = tipoDosTemporarios.front();			
-			// TODO: No futuro, verificar se esse tipo pode descrito facilmente assim no cod. intermediário
-			codigo_gerado += "\t" + tipoCodIntermediario(tipoVar) + " " + tmpVarPrefix + to_string(i) + ";" + " // " + tipoParaString(tipoVar) + "\n";			
+			
+			if (tipoDiretoCodIntermediario(tipoVar))
+			{
+				codigo_gerado += "\t" + tipoCodIntermediario(tipoVar) + " " + tmpVarPrefix + to_string(i) + ";" + " // " + tipoParaString(tipoVar) + "\n";			
+			}
+			else if (tipoVar == TIPO_STRING)
+			{				
+				StringInfo* sinfo = tabelaStrings[tmpVarPrefix + to_string(i)];
+
+				if (sinfo->éDinâmica)
+				{
+					// Usar char*
+					codigo_gerado += string("\tchar* ") + tmpVarPrefix + to_string(i) + ";" + " // " + tipoParaString(tipoVar) + "\n";			
+					codigo_gerado += string("\tint ") + tmpVarPrefix + to_string(i) + str_length_suffix + ";\n";
+				}
+				else
+				{
+					// Usar char[]
+					codigo_gerado += string("\tchar ") + tmpVarPrefix + to_string(i) + "[" + to_string(sinfo->tamanho) + "]" + ";" + " // " + tipoParaString(tipoVar) + "\n";	
+				}
+			}			
+			else
+			{
+				semanticError("Uma variável do tipo " + tipoParaString(tipoVar) + " não pode ser declarada");
+				YYABORT;
+			}
 
 			tipoDosTemporarios.pop();
 			i++;
@@ -194,9 +233,33 @@ OUTPUT:
 		while (!ordemDeclaracaoSimbolos.empty())
 		{			 
 			Simbolo* s = ordemDeclaracaoSimbolos.front();
+			TIPO tipoVar = s->tipoDeclarado;
+			
+			if (tipoDiretoCodIntermediario(tipoVar))
+			{
+				codigo_gerado += "\t" + tipoCodIntermediario(s->tipoDeclarado) + " " + s->labelReal + ";" + " // " + s->labelUsuario + "\n";
+			}			
+			else if (tipoVar == TIPO_STRING)
+			{
+				StringInfo* sinfo = tabelaStrings[tmpVarPrefix + to_string(i)];
 
-			// TODO: No futuro, verificar se esse tipo pode descrito facilmente assim no cod. intermediário
-			codigo_gerado += "\t" + tipoCodIntermediario(s->tipoDeclarado) + " " + s->labelReal + ";" + " // " + s->labelUsuario + "\n";
+				if (sinfo->éDinâmica)
+				{
+					// Usar char*
+					codigo_gerado += string("\tchar* ") + s->labelReal + ";" + " // " + s->labelUsuario + "\n";		
+					codigo_gerado += "\tint " + s->labelReal + str_length_suffix + ";\n";
+				}
+				else
+				{
+					// Usar char[]
+					codigo_gerado += string("\tchar ") + s->labelReal + "[" + to_string(sinfo->tamanho) + "]" + ";" + " // " + s->labelUsuario + "\n";	
+				}
+			}
+			else
+			{
+				semanticError("Uma variável do tipo " + tipoParaString(tipoVar) + " não pode ser declarada");
+				YYABORT;
+			}
 
 			ordemDeclaracaoSimbolos.pop();
 		}
@@ -267,6 +330,17 @@ EXPRESSAO:
 		$$.label = novaVarTemp($1.tipo);
 		$$.tipo = $1.tipo;
 		$$.traducao = "\t" + $$.label + " = " + $1.label + ";\n";
+
+		if ($1.tipo == TIPO_STRING)
+		{
+			// É uma string estática até então pq estamos recebendo do código fonte uma string pronta
+			StringInfo* sinfo = novaString();
+			sinfo->éDinâmica = false;
+			sinfo->tamanho = $1.label.length() - 2 + 1; // -2 aqui pq a string recebida tem dois ", +1 por causa do \0			
+			tabelaStrings[$$.label] = sinfo;
+
+			$$.traducao = "\tstrcpy(" + $$.label + ", " + $1.label + ");\n";
+		}
 	}
 	| TK_ID
 	{
@@ -288,6 +362,26 @@ EXPRESSAO:
 		$$.label = novaVarTemp(tipoId);
 		$$.tipo = tipoId;
 		$$.traducao = "\t" + $$.label + " = " + varNomeReal($1.label) + ";" + " // " + $1.label + "\n";
+
+		if (tipoId == TIPO_STRING)
+		{
+			// Cria uma variável temporária para carregar a string guardada no ID passado pelo usuário 
+			// TODO: FALTA A PARTE DO MALLOC (OU FREE SE NECESSARIO) PARA ALOCAR A STRING CASO ELA FOR DINAMICA
+			StringInfo* sinfo = novaString();
+			string idNomeReal = varNomeReal($1.label);
+			StringInfo* sinfoId = tabelaStrings[idNomeReal];
+
+			sinfo->éDinâmica = sinfoId->éDinâmica;
+
+			if (!sinfoId->éDinâmica)
+			{
+				sinfo->tamanho = sinfoId->tamanho;	
+			}		
+
+			tabelaStrings[$$.label] = sinfo;
+			$$.traducao = "\tstrcpy(" + $$.label + ", " + idNomeReal + ");\n";
+		}
+
 	}
 	| TK_INPUT '(' TK_TIPO ')'
 	{
@@ -793,6 +887,13 @@ DECLARACAO:
 
 			tabelaSimbolos.back()[$2.label] = s;
 			ordemDeclaracaoSimbolos.push(s);
+
+			if ($1.tipo == TIPO_STRING)
+			{
+				StringInfo* sinfo = novaString();
+				sinfo->éDinâmica = true;
+				tabelaStrings[varNomeReal($2.label)];
+			}
 		}
 	}
 ;
@@ -828,6 +929,12 @@ Simbolo* novaVar(TIPO tipo, string labelUsuario)
 	return s;
 }
 
+// Apenas um helper para criar uma StringInfo
+StringInfo* novaString()
+{
+	StringInfo* s = new StringInfo;
+	return s;
+}
 
 void empilharEscopo()
 {
@@ -910,6 +1017,27 @@ string tipoCodIntermediario(TIPO tipo)
 	return "";
 }
 
+// Retorna, dado um tipo, se consegue ser transformado facilmente em código intermediário, apenas trocando o tipo
+bool tipoDiretoCodIntermediario(TIPO tipo)
+{
+	switch (tipo)
+	{
+		case TIPO_INT:
+			return true;
+			break;
+		case TIPO_BOOL:
+			return true;
+			break;
+		case TIPO_FLOAT:
+			return true;
+			break;
+		case TIPO_CHAR:
+			return true;
+			break;
+	}
+	return false;
+}
+
 // Retorna, dado um tipo, qual é a string correspondente do nome daquele tipo.
 // OBS: É diferente do tipo usado para representar esse tipo no código intermediário
 // OBS²: Não verifica se o tipo passado é válido
@@ -928,6 +1056,9 @@ string tipoParaString(TIPO tipo)
 			break;
 		case TIPO_CHAR:
 			return "char";
+			break;
+		case TIPO_STRING:
+			return "string";
 			break;
 	}
 	return "unknown";

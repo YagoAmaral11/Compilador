@@ -1,7 +1,1 @@
-var teste = input(int);
-float teste2 = input;
-char teste3 = input;
-
-output teste;
-output teste2;
-output teste3;
+"oi";
