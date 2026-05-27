@@ -50,6 +50,7 @@ NOT (!|not)
 [()]        { coluna++; return *yytext; }
 [{}]        { coluna++; return *yytext; }
 [;]         { coluna++; return *yytext; }
+[:]         { coluna++; return *yytext; }
 "int"       { coluna += strlen(yytext); yylval.tipo = TIPO_INT; return TK_TIPO; }
 "float"     { coluna += strlen(yytext); yylval.tipo = TIPO_FLOAT; return TK_TIPO; }
 "char"      { coluna += strlen(yytext); yylval.tipo = TIPO_CHAR; return TK_TIPO; }
