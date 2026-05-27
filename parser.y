@@ -172,6 +172,8 @@ queue<Caso*> tabelaCasos; // Lista de casos para o switch;
 // TOKEN PARA OS DIFERENTES COMANDOS DE CONTROLE DE FLUXO; OBS: Para cada comando novo, deve-se criar um token correspondente e alterar o lexer para retornar esse token quando encontrar a palavra reservada do comando
 %token TK_IF TK_ELSE TK_WHILE TK_FOR TK_SWITCH TK_CASE TK_DEFAULT TK_DO
 
+%token TK_BREAK TK_CONTINUE TK_ESCAPE
+
 /* OBS: Cada novo tipo adicionado, deve-se criar um token desses e alterar o yylval.tipo para o token correspondente no lexer  */
 /* 		É também necessário, para cada tipo novo, alterar: tipoCodIntermediario, tipoParaString, inicializarTabelaConversao e inicializarTabelaDeOperadores 	*/
 /* TOKEN PARA OS TIPOS DIFERENTES */
@@ -304,6 +306,18 @@ COMANDO:
 	{
 		$$.traducao = $1.traducao;
 	}
+	| BREAK
+	{
+		$$.traducao = $1.traducao;
+	}
+	| CONTINUE
+	{
+		$$.traducao = $1.traducao;
+	}
+	| ESCAPE
+	{
+		$$.traducao = $1.traducao;
+	}
 ;
 
 COMANDO_OPCIONAL:
@@ -400,7 +414,7 @@ FOR:
 
 		string labelExp = novaVarTemp(TIPO_BOOL);
 
-		$$.traducao = $4.traducao + L->labelInicio + ":\n" + $6.traducao + "\t" + labelExp + " = !" + $6.label + ";\n" + "\tif (" + labelExp + ")\n\t\tgoto " + L->labelFim + ";\n" + $10.traducao + $8.traducao + "\tgoto " + L->labelInicio + ";\n" + L->labelFim + ":\n";
+		$$.traducao = $4.traducao + L->labelInicio + "_FOR:\n" + $6.traducao + "\t" + labelExp + " = !" + $6.label + ";\n" + "\tif (" + labelExp + ")\n\t\tgoto " + L->labelFim + ";\n" + $10.traducao + L->labelInicio + ":\n" + $8.traducao + "\tgoto " + L->labelInicio + "_FOR;\n" + L->labelFim + ":\n";
 
 	}
 ;
@@ -591,6 +605,75 @@ DEFAULT:
 	{
 		$$.traducao = "";
 		$$.label = "";
+	}
+;
+
+BREAK:
+	TK_BREAK ';'
+	{
+		Label* L = tabelaLabels.back();
+
+		int i;
+
+		for(i = tabelaLabels.size() - 1; i >= 0; i--)
+		{
+
+			if (tabelaLabels[i]->tipoComando != TipoComando::IF_ELSE)
+			{
+				L = tabelaLabels[i];
+				break;
+			}
+		}
+
+		if (tabelaLabels.empty() || (i < 0))
+		{
+			semanticError("Uso de break fora de um comando de controle de fluxo -> O comando 'break' só pode ser usado dentro de comandos de controle de fluxo como do_while, for, while, switch, etc.");
+			YYABORT;
+		}
+
+		$$.traducao = "\tgoto " + L->labelFim + ";\n";
+	}
+;
+
+CONTINUE:
+	TK_CONTINUE ';'
+	{
+				Label* L = tabelaLabels.back();
+
+		int i;
+
+		for(i = tabelaLabels.size() - 1; i >= 0; i--)
+		{
+
+			if ((tabelaLabels[i]->tipoComando != TipoComando::IF_ELSE) && (tabelaLabels[i]->tipoComando != TipoComando::SWITCH))
+			{
+				L = tabelaLabels[i];
+				break;
+			}
+		}
+
+		if (tabelaLabels.empty() || (i < 0))
+		{
+			semanticError("Uso de continue fora de um comando de controle de fluxo -> O comando 'continue' só pode ser usado dentro de comandos de controle de fluxo como do_while, for, while, etc.");
+			YYABORT;
+		}
+
+		$$.traducao = "\tgoto " + L->labelInicio + ";\n";
+	}
+;
+
+ESCAPE:
+	TK_ESCAPE ';'
+	{
+		Label* L = tabelaLabels.front();
+
+		if (tabelaLabels.empty())
+		{
+			semanticError("Uso de escape fora de comando");
+			YYABORT;
+		}
+
+		$$.traducao = "\tgoto " + L->labelFim + ";\n";
 	}
 ;
 

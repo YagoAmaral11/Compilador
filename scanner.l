@@ -35,6 +35,9 @@ NOT (!|not)
 "case"     { coluna += strlen(yytext); return TK_CASE; }
 "default"  { coluna += strlen(yytext); return TK_DEFAULT; }
 "do"       { coluna += strlen(yytext); return TK_DO; }
+"break"    { coluna += strlen(yytext); return TK_BREAK; }
+"continue" { coluna += strlen(yytext); return TK_CONTINUE; }
+"escape"   { coluna += strlen(yytext); return TK_ESCAPE; }
 {AND}        { coluna += 2; return OP_AND; }
 {OR}        { coluna += 2; return OP_OR; }
 {NOT}         { coluna += 1; return OP_NOT; }
@@ -44,6 +47,7 @@ NOT (!|not)
 ">="   { coluna += 2; return OP_MAIOR_IGUAL; }
 "<"         { coluna ++; return OP_MENOR; }
 ">"         { coluna ++; return OP_MAIOR; }
+
 
 [=]         { coluna++; return *yytext; }
 [+-/*]		{ coluna++; return *yytext; }
