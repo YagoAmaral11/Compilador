@@ -1250,12 +1250,22 @@ ATRIBUICAO_NAO_DECLARACATIVA:
 						free = "\tfree(" + s->labelReal + ");\n";
 					}
 
-					string tmpTamanhoExp = novaVarTemp(TIPO_INT); // O tamanho da string que estamos colocando em TK_ID; Tem que calcular em tempo de exec.										
+					string tmpTamanhoExp = novaVarTemp(TIPO_INT); // O tamanho da string que estamos colocando em TK_ID; Tem que calcular em tempo de exec.															
+					string charAtualLabel = novaVarTemp(TIPO_CHAR); // O caractere que está sendo lido no momento
+					string exp = novaVarTemp(TIPO_BOOL); // A expressão charAtualLabel != 
+					string expNegada = novaVarTemp(TIPO_BOOL); // !exp
 
-					// Calcular tamanho da string dinâmica exp usando um loop e colocar em tmpTamanhoExp
+					// Calcular tamanho da string dinâmica exp (labelExp) usando um loop e colocar em tmpTamanhoExp				
+					// TODO: Tem coisa alí que não é permitida no código intermediário (exp = charAtualLabel != '\0' precisa ser quebrado em mais passos e != não pode existir no código intermediário )	
+					string loop = "\t" + tmpTamanhoExp + " = 0;\n" + "label_contador_inicio_" + to_string(label_qnt) + ":\n\t" + charAtualLabel + " = " + labelExp + "[" + tmpTamanhoExp + "];\n\t" + exp + " = " + charAtualLabel + " != '\\0';\n\t" 
+									+ expNegada + " = !" + exp + ";\n" + string("\tif (") + expNegada + ")\n\t\tgoto label_contador_fim_" + to_string(label_qnt) + ";\n\t" + tmpTamanhoExp + " = " + tmpTamanhoExp + " + 1;\n\t"
+									+ "goto label_contador_inicio_" + to_string(label_qnt) + ";\nlabel_contador_fim_" + to_string(label_qnt) + ":\n\t" + tmpTamanhoExp + " = " + tmpTamanhoExp + " + 1;\n";
+					label_qnt++;
+
 					// calcular o tamanho que deve ser alocado, usando o tamanho * sizeof(char)
 					// alocar essa quantia
-					// atualizar a tradução final com a tradConversao + free + malloc e strcpy final
+					// atualizar a tradução final com a tradConversao + loop + free + malloc e strcpy final
+					$$.traducao = $3.traducao + tradConversao + loop; //OBS: INCOMPLETO
 				}
 				else
 				{

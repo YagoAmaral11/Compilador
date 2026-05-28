@@ -1,13 +1,6 @@
-int teste = input;
+char charString = 'a';
 
-if (teste > 0)
-{    
-    string a;
-    a = "Olá mundo";
-    a = "Sou eu denovo!";
-    output a;
+if (true)
+{
+    char teste = 't';
 }
-
-string a;
-a = "Outra string";
-output a;
