@@ -791,11 +791,29 @@ ATRIBUICAO:
 			{
 				if (sinfoVar->éDinâmica)
 				{
+					string free = "";
+					if (s->simboloInicializado)
+					{
+						free = "\tfree(" + s->labelReal + ");\n";
+					}
 
+					string tmpTamanhoExp = novaVarTemp(TIPO_INT); // O tamanho da string que estamos colocando em TK_ID; Tem que calcular em tempo de exec.										
+
+					// Calcular tamanho da string dinâmica exp usando um loop e colocar em tmpTamanhoExp
+					// calcular o tamanho que deve ser alocado, usando o tamanho * sizeof(char)
+					// alocar essa quantia
+					// atualizar a tradução final com a tradConversao + free + malloc e strcpy final
 				}
 				else
 				{
-					
+					// Calcular tamanho da string dinâmica exp usando um loop e colocar em tmpTamanhoExp
+					// calcular o tamanho que deve ser alocado, usando o tamanho * sizeof(char)
+					// transformar a string estática TK_ID em uma dinâmica na tabela de strings
+					// registrar que ocorreu essa transição e guardar o maior tamamnho estático dela
+					// dar free 
+					// alocar nova string
+					// strcopy final
+					// atualizar traducao final
 				}
 			}
 			else
