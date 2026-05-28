@@ -11,6 +11,7 @@
 #include <deque>
 #include <fstream>
 #include <cstring>
+#include <stdlib.h>
 
 using namespace std;
 
@@ -236,8 +237,8 @@ OUTPUT:
 	{
 		// TODO: Depois separar em funções
 
-		codigo_gerado = "#include <stdio.h>\n#include <string.h>\n"
-						"int main(void) \n{\n";						
+		codigo_gerado = "#include <stdio.h>\n#include <string.h>\n#include <stdlib.h>\n"
+						"\nint main(void)\n{\n";						
 
 
 		codigo_gerado += "\t// Variaveis Temporarias\n";
@@ -288,7 +289,7 @@ OUTPUT:
 			}			
 			else if (tipoVar == TIPO_STRING)
 			{
-				StringInfo* sinfo = tabelaStrings[tmpVarPrefix + to_string(i)];
+				StringInfo* sinfo = tabelaStrings[s->labelReal];
 
 				if (sinfo->éDinâmica)
 				{
@@ -1224,8 +1225,51 @@ ATRIBUICAO_NAO_DECLARACATIVA:
 
 		$$.label = $1.label;
 		$$.traducao = $3.traducao + "\t" + tradConversao + varNomeReal($1.label) + " = " + labelExp + ";" + " // " + $1.label + "\n";
-
 		Simbolo* s = obterSimbolo($1.label);
+
+		if ($1.tipo == TIPO_STRING)
+		{						
+			StringInfo* sinfoVar = tabelaStrings[varNomeReal($1.label)];						
+			StringInfo* sinfoExp = tabelaStrings[labelExp];			
+
+			if (sinfoExp->éDinâmica)
+			{
+				if (sinfoVar->éDinâmica)
+				{
+
+				}
+				else
+				{
+					
+				}
+			}
+			else
+			{
+				if (sinfoVar->éDinâmica)
+				{
+					string free = "";
+					if (s->simboloInicializado)
+					{
+						free = "\tfree(" + s->labelReal + ");\n";
+					}
+
+					int tamanho = sinfoExp->tamanho; 
+
+					string tmpA = novaVarTemp(TIPO_INT); // O tamanho da string que estamos colocando em TK_ID					
+					string tmpB = novaVarTemp(TIPO_INT); // sizeof(char)
+					string tmpC = novaVarTemp(TIPO_INT); // tamanho * sizeof(char)
+					string malloc = "\t" + tmpA + " = " + to_string(tamanho) + ";\n\t" + tmpB + " = sizeof(char);\n\t" + tmpC + " = " + tmpA + " * " + tmpB + ";\n\t" + s->labelReal + " = (char*) malloc(" + tmpC + ");\n";
+					$$.traducao = $3.traducao + tradConversao + free + malloc + "\tstrcpy(" + s->labelReal + ", " + labelExp +")" + ";" + " // " + $1.label + "\n\t" + s->labelReal + str_length_suffix + " = " + to_string(tamanho) + ";\n";	
+				}
+				else
+				{
+					int tamanho = sinfoVar->tamanho + sinfoExp->tamanho - 1; // Desconsiderando um dos \0
+					sinfoVar->tamanho = tamanho; // Aumenta o tamanho da string estática					
+					$$.traducao = $3.traducao + tradConversao + "\tstrcpy(" + s->labelReal + ", " + labelExp +")" + ";" + " // " + $1.label + "\n";					
+				}
+			}
+		}
+
 		s->simboloInicializado = true;		
 	}
 ;
@@ -1316,12 +1360,12 @@ DECLARACAO:
 
 			tabelaSimbolos.back()[$2.label] = s;
 			ordemDeclaracaoSimbolos.push(s);
-
+			
 			if ($1.tipo == TIPO_STRING)
 			{
 				StringInfo* sinfo = novaString();
-				sinfo->éDinâmica = true;
-				tabelaStrings[varNomeReal($2.label)];
+				sinfo->éDinâmica = true;				
+				tabelaStrings[s->labelReal] = sinfo;				
 			}
 		}
 	}
