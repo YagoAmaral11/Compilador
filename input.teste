@@ -1,3 +1,13 @@
+int teste = input;
+
+if (teste > 0)
+{    
+    string a;
+    a = "Olá mundo";
+    a = "Sou eu denovo!";
+    output a;
+}
+
 string a;
-a = "Olá mundo";
-a = "Sou eu denovo!";
+a = "Outra string";
+output a;

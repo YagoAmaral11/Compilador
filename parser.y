@@ -805,11 +805,12 @@ EXPRESSAO:
 
 		if (tipoId == TIPO_STRING)
 		{
-			// Cria uma variável temporária para carregar a string guardada no ID passado pelo usuário 
-			// TODO: FALTA A PARTE DO MALLOC (OU FREE SE NECESSARIO) PARA ALOCAR A STRING CASO ELA FOR DINAMICA
+			// Cria uma variável temporária para carregar a string guardada no ID passado pelo usuário 			
 			StringInfo* sinfo = novaString();
 			string idNomeReal = varNomeReal($1.label);
 			StringInfo* sinfoId = tabelaStrings[idNomeReal];
+
+			string malloc = "";
 
 			sinfo->éDinâmica = sinfoId->éDinâmica;
 
@@ -817,9 +818,16 @@ EXPRESSAO:
 			{
 				sinfo->tamanho = sinfoId->tamanho;	
 			}		
+			else
+			{
+				string tmpA = novaVarTemp(TIPO_INT); // O tamanho da string que está guardada em TK_ID					
+				string tmpB = novaVarTemp(TIPO_INT); // sizeof(char)
+				string tmpC = novaVarTemp(TIPO_INT); // tamanho * sizeof(char)				
+				malloc = "\t" + tmpA + " = " + idNomeReal + str_length_suffix + ";\n\t" + tmpB + " = sizeof(char);\n\t" + tmpC + " = " + tmpA + " * " + tmpB + ";\n\t" + $$.label + " = " + "(char*) malloc(" + tmpC + ");\n";
+			}
 
 			tabelaStrings[$$.label] = sinfo;
-			$$.traducao = "\tstrcpy(" + $$.label + ", " + idNomeReal + ");\n";
+			$$.traducao = malloc + "\tstrcpy(" + $$.label + ", " + idNomeReal + ");\n";
 		}
 
 	}
@@ -1281,7 +1289,7 @@ ATRIBUICAO_NAO_DECLARACATIVA:
 				}
 				else
 				{
-					int tamanho = sinfoVar->tamanho + sinfoExp->tamanho - 1; // Desconsiderando um dos \0
+					int tamanho = sinfoVar->tamanho + sinfoExp->tamanho - 1; // Desconsiderando um dos \0 // OBS: AQUI DEVERIA SER QUAL É O MAIOR TAMANHO, NAO A CONCATENACAO DAS STRINGS
 					sinfoVar->tamanho = tamanho; // Aumenta o tamanho da string estática					
 					$$.traducao = $3.traducao + tradConversao + "\tstrcpy(" + s->labelReal + ", " + labelExp +")" + ";" + " // " + $1.label + "\n";					
 				}
@@ -1715,6 +1723,7 @@ void inicializarTabelaFormatting()
 	tabelaFormattingAdd(TIPO_INT, "%d");
 	tabelaFormattingAdd(TIPO_FLOAT, "%f");
 	tabelaFormattingAdd(TIPO_CHAR, "%c");
+	tabelaFormattingAdd(TIPO_STRING, "%s");
 }
 
 void tabelaFormattingAdd(TIPO tipo, string cFormato)
