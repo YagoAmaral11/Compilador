@@ -297,7 +297,7 @@ COMANDO:
 	{
 		$$.traducao = $1.traducao;
 	}
-  | TK_OUTPUT EXPRESSAO ';'
+  	| TK_OUTPUT EXPRESSAO ';'
 	{
 		TIPO tipoExp = $2.tipo;
 
@@ -308,7 +308,7 @@ COMANDO:
 		}
 
 		$$.traducao = $2.traducao + "\tprintf(\"" + tabelaFormatting[tipoExp] + "\\n\", " + $2.label + ");\n";    
-  }
+  	}
 	| IF
 	{
 		$$.traducao = $1.traducao;
