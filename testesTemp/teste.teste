@@ -1,2 +1,11 @@
-float f = 10;
-f = 7;
+int a = 10;
+int b;
+float c;
+
+for (int i = 0; a < i; i = i + 1) 
+{
+    for(int j = 0; a < j; j = j + 1) { b = a + i; escape; }
+    break;
+}
+
+c = a + b;

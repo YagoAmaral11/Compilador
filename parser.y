@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <utility>
 #include <vector>
+#include <deque>
 #include <fstream>
 
 using namespace std;
@@ -51,6 +52,30 @@ struct ConversaoInfo
 	TipoDeConversao tipo;	
 };
 
+enum class TipoComando
+{
+	IF_ELSE,
+	FOR,
+	WHILE,
+	SWITCH,
+	DO
+};
+
+struct Label
+{
+	string labelInicio; // Label para o início do bloco de código (usado para controle de fluxo)
+	string labelFim; // Label para o fim do bloco de código (usado para controle de fluxo)
+	TipoComando tipoComando; // O tipo do comando de controle de fluxo (if, for, etc.) relacionado a essa label; Usado para diferenciar os tipos de comandos de controle de fluxo
+};
+
+struct Caso
+{
+	string labelCaso; // Label do caso
+	string valorCaso; // O valor do caso, em formato de string (1, 'a', etc.); Usado para gerar o código intermediário do switch
+	TIPO tipoValor; // Tipo do valor do caso (int, char, etc.)
+	int numCaso; // O valor do caso (1, 2, 'a', etc.)
+};
+
 // Usado na tabela de conversão para gerar uma hash para um pair<T1,T2>, para que seja possível
 // usar pair<TIPO, TIPO> como chave
 struct pair_hash 
@@ -92,12 +117,20 @@ void tabelaDeOperadoresAdd(int operador, TIPO tipo);
 void empilharEscopo();
 void desempilharEscopo();
 Simbolo* obterSimbolo(string labelUsuario);
+Label* novaLabel(TipoComando tipoComando);
+//void empilharLabel(string labelInicio, string labelFim);
+Label* desempilharLabel();
+Caso* novaCaso(string labelCaso, TIPO tipoValor, string valorCaso);
+Caso* desempilharCaso();
 void inicializarTabelaFormatting();
 void tabelaFormattingAdd(TIPO tipo, string cFormato);
 
 // Variáveis
 int var_temp_qnt; // Contador de variáveis temporárias
 int var_qnt; // Contador de variáveis globais não temporárias criadas
+
+int label_qnt; // Contador de labels criadas
+int label_qnt_casos; // Contador de labels de casos criados; Usado para diferenciar os labels de casos dos labels de controle de fluxo
 
 int linha = 1; // Contador da linha do comando; Atualizado no lexer
 int coluna = 0; // Contador de caracteres do comando; Atualizado no lexer
@@ -118,6 +151,9 @@ unordered_map<pair<TIPO, TIPO>, ConversaoInfo, pair_hash> tabelaConversao;
 // OBS²: Note que essa não é uma tabela de conversões; Ela apenas verifica, para um par de variáveis de um tipo, se o operador passado pode ser usado
 unordered_map<pair<int, TIPO>, bool, pair_hash> tabelaOperadores;
 
+deque<Label*> tabelaLabels; // Pilha de labels para controle de fluxo (while, for, etc.);
+ 
+queue<Caso*> tabelaCasos; // Lista de casos para o switch;
 // Dado um TIPO (int, float, bool, char) salva qual o formato em C para ler/escrever aquele tipo no código intermediário
 // ex.: "%d" para int, "%f" para float, "%c" para char... 
 // OBS: as booleanas serão um problema, pois devem ser lidas como uma string (true/false) e transformadas em seu valor inteiro 1 ou 0
@@ -140,6 +176,13 @@ unordered_map<TIPO, string> tabelaFormatting;
 
 %token OP_NOT OP_AND OP_OR
 
+// TOKEN PARA OS DIFERENTES COMANDOS DE CONTROLE DE FLUXO; OBS: Para cada comando novo, deve-se criar um token correspondente e alterar o lexer para retornar esse token quando encontrar a palavra reservada do comando
+%token TK_IF TK_ELSE TK_WHILE TK_FOR TK_SWITCH TK_CASE TK_DEFAULT TK_DO
+
+%token TK_BREAK TK_CONTINUE TK_ESCAPE
+
+/* OBS: Cada novo tipo adicionado, deve-se criar um token desses e alterar o yylval.tipo para o token correspondente no lexer  */
+/* 		É também necessário, para cada tipo novo, alterar: tipoCodIntermediario, tipoParaString, inicializarTabelaConversao e inicializarTabelaDeOperadores 	*/
 %token TK_INPUT TK_OUTPUT
 
 /* TOKEN PARA OS TIPOS DIFERENTES */
@@ -149,9 +192,13 @@ unordered_map<TIPO, string> tabelaFormatting;
 %token TIPO_FLOAT
 %token TIPO_CHAR
 %token TIPO_BOOL
+%token TIPO_VAZIO
 
 
 %start OUTPUT
+
+%nonassoc TK_NO_ELSE // Usado para marcar o final de um comando if sem else, para resolver o "dangling else problem"; O TK_NO_ELSE é não associativo, ou seja, ele não pode ser associado a nenhum else; Assim, o else mais próximo de um if sempre será associado a ele, e não a um if mais distante
+%nonassoc TK_ELSE // Para resolver o "dangling else problem"; O TK_ELSE é não associativo, ou seja, ele só pode ser associado ao if mais próximo; Assim, o else mais próximo de um if sempre será associado a ele, e não a um if mais distante
 
 %right '='
 
@@ -222,6 +269,17 @@ COMANDOS:
 	}
 ;
 
+COMANDOS_OPCIONAIS:
+	COMANDOS
+	{
+		$$.traducao = $1.traducao;
+	}
+	| /* vazio */
+	{
+		$$.traducao = "";
+	}
+;
+
 COMANDO:
 	EXPRESSAO ';'	
 	{
@@ -239,7 +297,7 @@ COMANDO:
 	{
 		$$.traducao = $1.traducao;
 	}
-    | TK_OUTPUT EXPRESSAO ';'
+  | TK_OUTPUT EXPRESSAO ';'
 	{
 		TIPO tipoExp = $2.tipo;
 
@@ -250,18 +308,399 @@ COMANDO:
 		}
 
 		$$.traducao = $2.traducao + "\tprintf(\"" + tabelaFormatting[tipoExp] + "\\n\", " + $2.label + ");\n";    
-  	}
+  }
+	| IF
+	{
+		$$.traducao = $1.traducao;
+	}
+	| FOR 
+	{
+		$$.traducao = $1.traducao;
+	}
+	| WHILE
+	{
+		$$.traducao = $1.traducao;
+	}
+	| DO_WHILE
+	{
+		$$.traducao = $1.traducao;
+	}
+	| SWITCH
+	{
+		$$.traducao = $1.traducao;
+	}
+	| BREAK
+	{
+		$$.traducao = $1.traducao;
+	}
+	| CONTINUE
+	{
+		$$.traducao = $1.traducao;
+	}
+	| ESCAPE
+	{
+		$$.traducao = $1.traducao;
+	}
+;
+
+COMANDO_OPCIONAL:
+	COMANDO
+	{
+		$$.traducao = $1.traducao;
+	}
+	| ';'/* vazio */
+	{
+		$$.traducao = "";
+	}
 ;
 
 BLOCO:
-	'{' { empilharEscopo(); } COMANDOS '}'
+	'{' { empilharEscopo(); } COMANDOS_OPCIONAIS '}'
 	{
 		desempilharEscopo();
 		$$.traducao = "\n\t// Inicio do bloco\n" + $3.traducao + "\t// Fim do bloco\n\n";
 	}
 ;
 
-EXPRESSAO: 	
+IF :
+	IF_PREFIXO COMANDO_OPCIONAL %prec TK_NO_ELSE
+	{
+
+		desempilharEscopo();
+
+		Label* L = desempilharLabel();
+
+		string labelExp = novaVarTemp(TIPO_BOOL);
+
+		$$.traducao = $1.traducao + "\t" + labelExp + " = !" + $1.label + ";\n" + "\tif (" + labelExp + ")\n\t\tgoto " + L->labelFim + ";\n" + $2.traducao + L->labelFim + ":\n";
+
+	}
+	| IF_PREFIXO COMANDO_OPCIONAL ELSE
+	{
+
+		desempilharEscopo();
+
+		desempilharLabel();
+
+		string labelExp = novaVarTemp(TIPO_BOOL);
+
+		$$.traducao = $1.traducao + "\t" + labelExp + " = !" + $1.label + ";\n" + "\tif (" + labelExp + ")\n\t\tgoto " + $3.label + ";\n" + $2.traducao + $3.traducao;
+
+	}
+;
+
+IF_PREFIXO:
+	TK_IF '(' EXPRESSAO ')' { empilharEscopo(); novaLabel(TipoComando::IF_ELSE);} 
+	{
+		if ($3.tipo != TIPO_BOOL)
+		{
+			semanticError("Erro de tipo -> A expressão do if deve ser do tipo booleano; Tipo '" + tipoParaString($3.tipo) + "' encontrado.");
+			YYABORT;
+		}
+
+		$$.label = $3.label;
+		$$.traducao = $3.traducao;
+
+	}
+;
+
+ELSE:
+	TK_ELSE { empilharEscopo(); novaLabel(TipoComando::IF_ELSE); } COMANDO_OPCIONAL 
+	{
+		desempilharEscopo();
+
+		Label* L = desempilharLabel();
+		
+		$$.traducao = "\tgoto " + L->labelFim + ";\n" + L->labelInicio + ":\n" + $3.traducao + L->labelFim + ":\n";
+		$$.label = L->labelInicio;
+	}
+;
+
+FOR: 
+	TK_FOR { empilharEscopo(); novaLabel(TipoComando::FOR); } '(' FOR_PARAM_1 ';' FOR_PARAM_2 ';' FOR_PARAM_3 ')' COMANDO_OPCIONAL
+	{
+		if( $6.tipo == TIPO_VAZIO)
+		{
+			$6.tipo = TIPO_BOOL; // Se a expressão do meio do for for vazia, considerar como verdadeira (equivalente a "for(;;)")
+			$6.label = novaVarTemp(TIPO_BOOL);
+			$6.traducao = "\t" + $6.label + " = " + to_string(BOOL_TRUE) + ";\n";
+		}
+		if ($6.tipo != TIPO_BOOL)
+		{
+			semanticError("Erro de tipo -> A expressão do for deve ser do tipo booleano; Tipo '" + tipoParaString($6.tipo) + "' encontrado.");
+			YYABORT;
+		}
+
+		desempilharEscopo();
+
+		Label* L = desempilharLabel();
+
+		string labelExp = novaVarTemp(TIPO_BOOL);
+
+		$$.traducao = $4.traducao + L->labelInicio + "_FOR:\n" + $6.traducao + "\t" + labelExp + " = !" + $6.label + ";\n" + "\tif (" + labelExp + ")\n\t\tgoto " + L->labelFim + ";\n" + $10.traducao + L->labelInicio + ":\n" + $8.traducao + "\tgoto " + L->labelInicio + "_FOR;\n" + L->labelFim + ":\n";
+
+	}
+;
+
+FOR_PARAM_1:
+	ATRIBUICAO
+	{
+		$$.label = $1.label;
+		$$.traducao = $1.traducao;
+	}
+	| EXPRESSAO
+	{
+		$$.label = $1.label;
+		$$.tipo = $1.tipo;
+		$$.traducao = $1.traducao;
+	}
+	| /* vazio */
+	{
+		$$.label = "";
+		$$.traducao = "";
+	}
+;
+
+FOR_PARAM_2:
+	EXPRESSAO
+	{
+		$$.label = $1.label;
+		$$.tipo = $1.tipo;
+		$$.traducao = $1.traducao;
+	}
+	| /* vazio */
+	{
+		$$.label = "";
+		$$.tipo = TIPO_VAZIO; // Tipo especial para indicar ausência de expressão
+		$$.traducao = "";
+	}
+;
+
+FOR_PARAM_3:
+	ATRIBUICAO_NAO_DECLARACATIVA
+	{
+		$$.label = $1.label;
+		$$.traducao = $1.traducao;
+	}
+	| EXPRESSAO
+	{
+		$$.label = $1.label;
+		$$.tipo = $1.tipo;
+		$$.traducao = $1.traducao;
+	}
+	| /* vazio */
+	{
+		$$.label = "";
+		$$.traducao = "";
+	}
+;
+
+WHILE:
+	TK_WHILE '(' EXPRESSAO ')' { empilharEscopo(); novaLabel(TipoComando::WHILE); } COMANDO_OPCIONAL
+	{
+		if ($3.tipo != TIPO_BOOL)
+		{
+			semanticError("Erro de tipo -> A expressão do while deve ser do tipo booleano; Tipo '" + tipoParaString($3.tipo) + "' encontrado.");
+			YYABORT;
+		}
+
+		desempilharEscopo();
+
+		Label* L = desempilharLabel();
+
+		string labelExp = novaVarTemp(TIPO_BOOL);
+
+		$$.traducao = L->labelInicio + ":\n" + $3.traducao + "\t" + labelExp + " = !" + $3.label + ";\n" + "\tif (" + labelExp + ")\n\t\tgoto " + L->labelFim + ";\n" + $6.traducao + "\tgoto " + L->labelInicio + ";\n" + L->labelFim + ":\n";
+		
+	}
+;
+
+DO_WHILE:
+	TK_DO { empilharEscopo(); novaLabel(TipoComando::DO); } COMANDO_OPCIONAL TK_WHILE '(' EXPRESSAO ')' ';'
+	{
+		if ($6.tipo != TIPO_BOOL)
+		{
+			semanticError("Erro de tipo -> A expressão do do-while deve ser do tipo booleano; Tipo '" + tipoParaString($6.tipo) + "' encontrado.");
+			YYABORT;
+		}
+
+		desempilharEscopo();
+
+		Label* L = desempilharLabel();
+
+		$$.traducao = L->labelInicio + "_DO:\n" + $3.traducao + L->labelInicio +":\n" + $6.traducao + "\tif (" + $6.label + ")\n\t\tgoto " + L->labelInicio + "_DO;\n" + L->labelFim + ":\n";
+		
+	}
+;
+
+SWITCH:
+	SWITCH_PREFIXO '{' CASE_OPCIONAL DEFAULT '}'
+	{
+		desempilharEscopo();
+
+		Label* L = desempilharLabel();
+
+		string traducaoIF = "";
+
+		for(int i = 0; i < label_qnt_casos; i++)
+		{
+			Caso* caso = desempilharCaso();
+
+			if(caso->tipoValor == TIPO_VAZIO) //Default
+			{
+				traducaoIF += "\tgoto " + caso->labelCaso + ";\n";
+				continue;
+			}
+
+			if(caso->tipoValor != $1.tipo) 
+			{ 
+				semanticError("Comparação invalida -> Tipo diferente entre a expressão do switch e o valor do caso. Tipo da expressão: '" + tipoParaString($1.tipo) + "'; Tipo do caso: '" + tipoParaString(caso->tipoValor) + "'.");
+				YYABORT;
+			}
+
+			string labelExp = novaVarTemp(TIPO_BOOL);
+			string labelCasoValor = novaVarTemp(caso->tipoValor);
+
+			traducaoIF += "\t" + labelCasoValor + " = " + caso->valorCaso + ";\n" + "\t" + labelExp + " = " + $1.label + " == " + labelCasoValor + ";\n" + "\tif (" + labelExp + ")\n\t\tgoto " + caso->labelCaso + ";\n";
+
+		}
+
+		$$.traducao = $1.traducao + traducaoIF + $3.traducao + $4.traducao + L->labelFim + ":\n";
+	}
+;
+
+SWITCH_PREFIXO:
+	TK_SWITCH '(' EXPRESSAO ')' { empilharEscopo(); novaLabel(TipoComando::SWITCH); } 
+	{
+
+		$$.label = $3.label;
+		$$.tipo = $3.tipo;
+		$$.traducao = $3.traducao;
+		label_qnt_casos = 0; // Reiniciar contador de labels de casos a cada switch
+
+	}
+;
+
+CASE:
+	TK_CASE TK_NUM ':' COMANDOS_OPCIONAIS
+	{
+		string labelCase = tabelaLabels.back()->labelInicio + to_string(label_qnt_casos); // Gerar um label único para o caso, baseado no contador de casos
+
+		Caso* caso = novaCaso(labelCase, $2.tipo, $2.label);
+		$$.traducao = caso->labelCaso + ":\n" + $4.traducao;
+
+		label_qnt_casos++; // Incrementar o contador de casos para garantir unicidade dos labels dos casos
+	}
+	| CASE TK_CASE TK_NUM ':' COMANDOS_OPCIONAIS
+	{
+		string labelCase = tabelaLabels.back()->labelInicio + to_string(label_qnt_casos); // Gerar um label único para o caso, baseado no contador de casos
+
+		Caso* caso = novaCaso(labelCase, $3.tipo, $3.label);
+		$$.traducao = $1.traducao + caso->labelCaso + ":\n" + $5.traducao;
+
+		label_qnt_casos++; // Incrementar o contador de casos para garantir unicidade dos labels dos casos
+	}
+;
+
+CASE_OPCIONAL:
+	CASE
+	{
+		$$.traducao = $1.traducao;
+	}
+	| /* vazio */
+	{
+		$$.traducao = "";
+	}
+;
+
+DEFAULT:
+	TK_DEFAULT ':' COMANDOS_OPCIONAIS
+	{
+		string labelCase = tabelaLabels.back()->labelInicio + to_string(label_qnt_casos); // Gerar um label único para o caso, baseado no contador de casos
+
+		Caso* caso = novaCaso(labelCase, TIPO_VAZIO, ""); // O caso default não tem um valor específico, então usar um tipo especial para indicar isso
+
+		$$.traducao = caso->labelCaso + ":\n" + $3.traducao;
+
+		label_qnt_casos++; // Incrementar o contador de casos para garantir unicidade dos labels dos casos
+	}
+	| /* vazio */
+	{
+		$$.traducao = "";
+		$$.label = "";
+	}
+;
+
+BREAK:
+	TK_BREAK ';'
+	{
+		Label* L = tabelaLabels.back();
+
+		int i;
+
+		for(i = tabelaLabels.size() - 1; i >= 0; i--)
+		{
+
+			if (tabelaLabels[i]->tipoComando != TipoComando::IF_ELSE)
+			{
+				L = tabelaLabels[i];
+				break;
+			}
+		}
+
+		if (tabelaLabels.empty() || (i < 0))
+		{
+			semanticError("Uso de break fora de um comando de controle de fluxo -> O comando 'break' só pode ser usado dentro de comandos de controle de fluxo como do_while, for, while, switch, etc.");
+			YYABORT;
+		}
+
+		$$.traducao = "\tgoto " + L->labelFim + ";\n";
+	}
+;
+
+CONTINUE:
+	TK_CONTINUE ';'
+	{
+				Label* L = tabelaLabels.back();
+
+		int i;
+
+		for(i = tabelaLabels.size() - 1; i >= 0; i--)
+		{
+
+			if ((tabelaLabels[i]->tipoComando != TipoComando::IF_ELSE) && (tabelaLabels[i]->tipoComando != TipoComando::SWITCH))
+			{
+				L = tabelaLabels[i];
+				break;
+			}
+		}
+
+		if (tabelaLabels.empty() || (i < 0))
+		{
+			semanticError("Uso de continue fora de um comando de controle de fluxo -> O comando 'continue' só pode ser usado dentro de comandos de controle de fluxo como do_while, for, while, etc.");
+			YYABORT;
+		}
+
+		$$.traducao = "\tgoto " + L->labelInicio + ";\n";
+	}
+;
+
+ESCAPE:
+	TK_ESCAPE ';'
+	{
+		Label* L = tabelaLabels.front();
+
+		if (tabelaLabels.empty())
+		{
+			semanticError("Uso de escape fora de comando");
+			YYABORT;
+		}
+
+		$$.traducao = "\tgoto " + L->labelFim + ";\n";
+	}
+;
+
+EXPRESSAO:
 	TK_NUM
 	{
 		$$.label = novaVarTemp($1.tipo);
@@ -665,6 +1104,12 @@ EXPRESSAO:
 ;
 
 ATRIBUICAO:
+	ATRIBUICAO_NAO_DECLARACATIVA
+	|
+	ATRIBUICAO_DECLARACATIVA
+;
+
+ATRIBUICAO_NAO_DECLARACATIVA:
 	TK_ID '=' EXPRESSAO
 	{		
 		// Se a variável já foi declarada, apenas altera seu valor; 
@@ -689,26 +1134,10 @@ ATRIBUICAO:
 		Simbolo* s = obterSimbolo($1.label);
 		s->simboloInicializado = true;		
 	}
-	| TK_ID '=' TK_INPUT
-	{
-		// Ler o input do tipo do TK_ID
-		// Aqui não tem como TK_INPUT virar expressão pois é necessário inferir o tipo de TK_INPUT
-		TIPO tipoExp = varTipo($1.label);
-		string labelExp = novaVarTemp(tipoExp);
-		
-		if (tabelaFormatting.find(tipoExp) == tabelaFormatting.end())
-		{
-			semanticError("Não é possível ler o tipo " + tipoParaString(tipoExp) + " na entrada.");
-			YYABORT;
-		}
+;
 
-		$$.label = $1.label;
-		$$.traducao = "\tscanf(\"" + tabelaFormatting[tipoExp] + "\", &" + labelExp + ");\n" + "\t" + varNomeReal($1.label) + " = " + labelExp + ";" + " // " + $1.label + "\n";
-		
-		Simbolo* s = obterSimbolo($1.label);
-		s->simboloInicializado = true; 
-	}	
-	| DECLARACAO '=' EXPRESSAO
+ATRIBUICAO_DECLARACATIVA:		
+	DECLARACAO '=' EXPRESSAO
 	{
 		// OBS: Declaração com inicialização; Em declaração a variável já é declarada corretamente; Aqui basta adicionar o valor da expressão se for do mesmo tipo e
 		// 		adicionar uma tradução para esse nó
@@ -837,6 +1266,57 @@ void empilharEscopo()
 void desempilharEscopo()
 {
 	tabelaSimbolos.pop_back();
+}
+
+Label* novaLabel(TipoComando tipo)
+{
+	Label* label = new Label();
+
+	if(tipo == TipoComando::IF_ELSE)
+	{
+	label->labelInicio = "label_Else_" + to_string(label_qnt);
+	label->labelFim = "label_Fim_" + to_string(label_qnt);
+	} else if(tipo == TipoComando::SWITCH)
+	{
+	label->labelInicio = "label_Inicio_Case_" + to_string(label_qnt) + "_";
+	label->labelFim = "label_Fim_" + to_string(label_qnt);
+	}else
+	{
+		label->labelInicio = "label_Inicio_" + to_string(label_qnt);
+		label->labelFim = "label_Fim_" + to_string(label_qnt);
+	}
+		
+	label->tipoComando = tipo;
+	label_qnt++;
+	tabelaLabels.push_back(label);
+	return label;
+}
+
+Label* desempilharLabel()
+{
+	Label* label = tabelaLabels.back();
+	tabelaLabels.pop_back();
+	return label;
+}
+
+Caso* novaCaso(string label, TIPO tipoValor, string valorCaso)
+{
+	Caso* caso = new Caso();
+	caso->labelCaso = label;
+	caso->tipoValor = tipoValor;
+	caso->valorCaso = valorCaso;
+	caso->numCaso = label_qnt_casos; // Atribuir o número do caso com base no contador de casos, garantindo unicidade
+
+	tabelaCasos.push(caso);
+
+	return caso;
+}
+
+Caso* desempilharCaso()
+{
+	Caso* caso = tabelaCasos.front();
+	tabelaCasos.pop();
+	return caso;
 }
 
 // Procura o símbolo de labelUsuario no escopo mais próximo; Não verifica se o símbolo realmente existe;
