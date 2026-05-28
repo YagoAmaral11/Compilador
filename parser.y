@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 #include <deque>
+#include <fstream>
 
 using namespace std;
 
@@ -121,6 +122,8 @@ Label* novaLabel(TipoComando tipoComando);
 Label* desempilharLabel();
 Caso* novaCaso(string labelCaso, TIPO tipoValor, string valorCaso);
 Caso* desempilharCaso();
+void inicializarTabelaFormatting();
+void tabelaFormattingAdd(TIPO tipo, string cFormato);
 
 // Variáveis
 int var_temp_qnt; // Contador de variáveis temporárias
@@ -134,7 +137,7 @@ int coluna = 0; // Contador de caracteres do comando; Atualizado no lexer
 
 string codigo_gerado; // Código intermediário gerado pelo compilador
 vector<unordered_map<string, Simbolo*>> tabelaSimbolos; // Tabela de símbolos
-queue<Simbolo*> ordemDeclaracaoSimbolos; // A ordem de declaração dos símbolos da tabela; TODO: Essa estrutura ainda precisa existir? Remover depois
+queue<Simbolo*> ordemDeclaracaoSimbolos; // Uma lista com todos os símbolos, de todos os escopos, que foram declarados pelo usuário. TODO: Renomear essa variável para melhor condizer com sua função
  
 queue<TIPO> tipoDosTemporarios; // O tipo de cada variável temporária; Está em ordem de declaração
 
@@ -151,6 +154,10 @@ unordered_map<pair<int, TIPO>, bool, pair_hash> tabelaOperadores;
 deque<Label*> tabelaLabels; // Pilha de labels para controle de fluxo (while, for, etc.);
  
 queue<Caso*> tabelaCasos; // Lista de casos para o switch;
+// Dado um TIPO (int, float, bool, char) salva qual o formato em C para ler/escrever aquele tipo no código intermediário
+// ex.: "%d" para int, "%f" para float, "%c" para char... 
+// OBS: as booleanas serão um problema, pois devem ser lidas como uma string (true/false) e transformadas em seu valor inteiro 1 ou 0
+unordered_map<TIPO, string> tabelaFormatting;
 
 // Macros
 #define tmpVarPrefix "tmp"
@@ -176,7 +183,11 @@ queue<Caso*> tabelaCasos; // Lista de casos para o switch;
 
 /* OBS: Cada novo tipo adicionado, deve-se criar um token desses e alterar o yylval.tipo para o token correspondente no lexer  */
 /* 		É também necessário, para cada tipo novo, alterar: tipoCodIntermediario, tipoParaString, inicializarTabelaConversao e inicializarTabelaDeOperadores 	*/
+%token TK_INPUT TK_OUTPUT
+
 /* TOKEN PARA OS TIPOS DIFERENTES */
+/* OBS: Cada novo tipo adicionado, deve-se criar um token desses e alterar o yylval.tipo para o token correspondente no lexer  */
+/* 		É também necessário, para cada tipo novo, alterar: tipoCodIntermediario, tipoParaString, inicializarTabelaConversao, inicializarTabelaDeOperadores e inicializarTabelaFormatting 	*/
 %token TIPO_INT
 %token TIPO_FLOAT
 %token TIPO_CHAR
@@ -226,7 +237,7 @@ OUTPUT:
 			i++;
 		}						
 		
-		codigo_gerado += "\n\t// Variaveis Globais\n";				
+		codigo_gerado += "\n\t// Variaveis De Usuario\n";				
 		while (!ordemDeclaracaoSimbolos.empty())
 		{			 
 			Simbolo* s = ordemDeclaracaoSimbolos.front();
@@ -239,7 +250,7 @@ OUTPUT:
 		codigo_gerado += "\n";		
 		
 
-		codigo_gerado += "\t// Inicio do codigo\n";
+		codigo_gerado += "\t// Codigo do Usuario\n";
 		codigo_gerado += $1.traducao;
 
 		codigo_gerado += "\n\treturn 0;" "\n}\n";
@@ -286,6 +297,18 @@ COMANDO:
 	{
 		$$.traducao = $1.traducao;
 	}
+  | TK_OUTPUT EXPRESSAO ';'
+	{
+		TIPO tipoExp = $2.tipo;
+
+		if (tabelaFormatting.find(tipoExp) == tabelaFormatting.end())
+		{
+			semanticError("Não é possível imprimir o tipo " + tipoParaString(tipoExp) + " na entrada.");
+			YYABORT;
+		}
+
+		$$.traducao = $2.traducao + "\tprintf(\"" + tabelaFormatting[tipoExp] + "\\n\", " + $2.label + ");\n";    
+  }
 	| IF
 	{
 		$$.traducao = $1.traducao;
@@ -705,6 +728,21 @@ EXPRESSAO:
 		$$.tipo = tipoId;
 		$$.traducao = "\t" + $$.label + " = " + varNomeReal($1.label) + ";" + " // " + $1.label + "\n";
 	}
+	| TK_INPUT '(' TK_TIPO ')'
+	{
+		// Retorna uma variável do tipo TK_TIPO lida;
+		// Consegue criar o nó de atributos da árvore sintática corretamente
+		$$.label = novaVarTemp($3.tipo);
+		$$.tipo = $3.tipo;
+
+		if (tabelaFormatting.find($3.tipo) == tabelaFormatting.end())
+		{
+			semanticError("Não é possível ler o tipo " + tipoParaString($3.tipo) + " na entrada.");
+			YYABORT;
+		}
+
+		$$.traducao = "\tscanf(\"" + tabelaFormatting[$3.tipo] + "\", &" + $$.label + ");\n";
+	}
 	|	
 	'(' EXPRESSAO ')'
 	{
@@ -1098,7 +1136,7 @@ ATRIBUICAO_NAO_DECLARACATIVA:
 	}
 ;
 
-ATRIBUICAO_DECLARACATIVA:
+ATRIBUICAO_DECLARACATIVA:		
 	DECLARACAO '=' EXPRESSAO
 	{
 		// OBS: Declaração com inicialização; Em declaração a variável já é declarada corretamente; Aqui basta adicionar o valor da expressão se for do mesmo tipo e
@@ -1123,8 +1161,28 @@ ATRIBUICAO_DECLARACATIVA:
 		Simbolo* s = obterSimbolo($1.label);
 		s->simboloInicializado = true;
 	}
-	|
-	TK_VAR TK_ID '=' EXPRESSAO
+	| DECLARACAO '=' TK_INPUT
+	{	
+		// Ler o input do tipo da Declaração
+		// Aqui não tem como TK_INPUT virar expressão pois é necessário inferir o tipo de TK_INPUT
+
+		TIPO tipoExp = varTipo($1.label);
+		string labelExp = novaVarTemp(tipoExp);
+
+		if (tabelaFormatting.find(tipoExp) == tabelaFormatting.end())
+		{
+			semanticError("Não é possível ler o tipo " + tipoParaString(tipoExp) + " na entrada.");
+			YYABORT;
+		}
+
+		$$.label = $1.label;
+		$$.traducao = "\tscanf(\"" + tabelaFormatting[tipoExp] + "\", &" + labelExp + ");\n" + "\t" + varNomeReal($1.label) + " = " + labelExp + ";" + " // " + $1.label + "\n";
+
+		Simbolo* s = obterSimbolo($1.label);
+		s->simboloInicializado = true; 
+
+	}		
+	| TK_VAR TK_ID '=' EXPRESSAO
 	{
 		// OBS: Declaração implícita por inferência
 		if (varExisteNoEscopoAtual($2.label))
@@ -1261,6 +1319,8 @@ Caso* desempilharCaso()
 	return caso;
 }
 
+// Procura o símbolo de labelUsuario no escopo mais próximo; Não verifica se o símbolo realmente existe;
+// Se o Símbolo não existir, é retornado NULL
 Simbolo* obterSimbolo(string labelUsuario)
 {
 	for(auto it = tabelaSimbolos.rbegin(); it != tabelaSimbolos.rend(); ++it)
@@ -1457,6 +1517,18 @@ void inicializarTabelaDeOperadores()
 
 }
 
+void inicializarTabelaFormatting()
+{
+	tabelaFormattingAdd(TIPO_INT, "%d");
+	tabelaFormattingAdd(TIPO_FLOAT, "%f");
+	tabelaFormattingAdd(TIPO_CHAR, "%c");
+}
+
+void tabelaFormattingAdd(TIPO tipo, string cFormato)
+{
+	tabelaFormatting[tipo] = cFormato;
+}
+
 // Usado para adicionar uma linha na tabela de operadores
 void tabelaDeOperadoresAdd(int operador, TIPO tipo)
 {
@@ -1593,8 +1665,8 @@ void initialize()
 
 	inicializarTabelaConversao();
 	inicializarTabelaDeOperadores();
-
-	empilharEscopo();
+  	inicializarTabelaFormatting();
+ 	empilharEscopo();		
 }
 
 int main(int argc, char* argv[])
@@ -1602,26 +1674,78 @@ int main(int argc, char* argv[])
 	// Para aceitar todos os tipos de caractere
 	std::setlocale(LC_ALL, "");
 
+	bool useOut = false;		
+	bool inEncontrado = false;
+	string outFile;
+	yyin = stdin;	
+
 	// programa de entrada
 	if (argc > 1)
-	{
-		yyin = fopen(argv[1], "r");
+	{	
+		// Lê todos os argumentos de entrada	
+		for (int i = 1; i < argc; i++)
+		{			
+			char* argAtual = argv[i];
+			std::string argAtualStr(argv[i]);
 
-		if (!yyin)
-		{
-			perror("fopen");
-			return 1;
-		}
-	}
-	else
-	{
-		yyin = stdin;
+			// Encontrou a Entrada
+			if (argv[i][0] != '-' && !inEncontrado)
+			{
+				// TODO: Depois verificar se o arquivo tem o posfixo da linguagem fonte				
+				yyin = fopen(argv[i], "r");
+				inEncontrado = true;
+
+				if (!yyin)
+				{
+					printf("%s", ("O arquivo " + argAtualStr + " não existe ou não é um arquivo de código fonte válido\n").c_str());
+					return 1;
+				}
+
+				continue;
+			}
+
+			// Encontrou uma flag
+			if (argv[i][0] == '-')
+			{				
+				// Comando de saída (output)				
+				if (strcmp(argAtual, "-o") == 0 || strcmp(argAtual, "-out") == 0 || strcmp(argAtual, "-output") == 0)
+				{
+					// Verifica se há um arquivo acompanhando o -o
+					// Verifica se não é o último argumento (se existe 1 depois dele) e se esse próximo argumento não é uma flag
+					if (i + 1 <= argc - 1 && argv[i + 1][0] != '-')
+					{						
+						outFile = argv[i + 1];
+						useOut = true;
+
+						i++;
+						continue;
+					}
+					else
+					{
+						printf("O argumento -output precisa de um caminho de arquivo\n");
+						return 1;
+					}
+				}
+
+			}
+		}		
 	}
 
 	initialize();
 
 	if (yyparse() == 0)
-		cout << codigo_gerado;
+	{
+		if (useOut)
+		{			
+			std::ofstream output(outFile);
+			output << codigo_gerado;
+			output.close();
+		}
+		else
+		{
+			cout << codigo_gerado;
+		}
+	}		
 
 	return 0;
 }

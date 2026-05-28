@@ -39,3 +39,5 @@
 
 # Pasta bin dos arquivos de execução/source compilados
 /build/
+# Arquivo de input do make exec/runexec
+input.teste 
