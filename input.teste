@@ -1,1 +1,3 @@
-"oi";
+string a;
+a = "Olá mundo";
+a = "Sou eu denovo!";
