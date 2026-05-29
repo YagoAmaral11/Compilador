@@ -1,13 +1,2 @@
-string a = "Teste";
-a = "Teste bem maior";
-
-string b;
-b = "Segunda string";
-
-a = b;
-
-output a;
-output b;
-
-string c = "Saída";
-output c;
+int a;
+a = input;
