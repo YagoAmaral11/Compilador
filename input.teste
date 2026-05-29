@@ -1,8 +1,4 @@
-string a;
+string a = "Teste";
 string b;
-
-a = "Teste";
-b = a;
-
-output a;
-output b;
+b = "Outra String";
+a = b;

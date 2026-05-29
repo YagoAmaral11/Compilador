@@ -97,6 +97,7 @@ struct pair_hash
 struct StringInfo
 {
 	bool éDinâmica;
+	bool transicionou; // Se era antes uma string fixa e se transformou em uma string dinâmica;
 	int tamanho;
 };
 
@@ -263,6 +264,11 @@ OUTPUT:
 					// Usar char*
 					codigo_gerado += string("\tchar* ") + tmpVarPrefix + to_string(i) + ";" + " // " + tipoParaString(tipoVar) + "\n";			
 					codigo_gerado += string("\tint ") + tmpVarPrefix + to_string(i) + str_length_suffix + ";\n";
+
+					if (sinfo->transicionou)
+					{						
+						codigo_gerado += StringMalloc(tmpVarPrefix + to_string(i), to_string(sinfo->tamanho));
+					}
 				}
 				else
 				{
@@ -299,6 +305,11 @@ OUTPUT:
 					// Usar char*
 					codigo_gerado += string("\tchar* ") + s->labelReal + ";" + " // " + s->labelUsuario + "\n";		
 					codigo_gerado += "\tint " + s->labelReal + str_length_suffix + ";\n";
+
+					if (sinfo->transicionou)
+					{						
+						codigo_gerado += StringMalloc(s->labelReal, to_string(sinfo->tamanho));
+					}
 				}
 				else
 				{
@@ -315,7 +326,6 @@ OUTPUT:
 			ordemDeclaracaoSimbolos.pop();
 		}
 		codigo_gerado += "\n";		
-		
 
 		codigo_gerado += "\t// Codigo do Usuario\n";
 		codigo_gerado += $1.traducao;
@@ -847,6 +857,16 @@ EXPRESSAO:
 		}
 
 		$$.traducao = "\tscanf(\"" + tabelaFormatting[$3.tipo] + "\", &" + $$.label + ");\n";
+
+		if ($3.tipo == TIPO_STRING)
+		{
+			// É uma nova string dinâmica
+			StringInfo* sinfo = novaString();
+			sinfo->éDinâmica = true;
+			tabelaStrings[$$.label] = sinfo;
+
+			// TODO: FAZER; INCOMPLETO
+		}
 	}
 	|	
 	'(' EXPRESSAO ')'
@@ -1246,6 +1266,7 @@ ATRIBUICAO_NAO_DECLARACATIVA:
 			{
 				if (sinfoVar->éDinâmica)
 				{
+					// STRING LEFT DINAMICA, STRING RIGHT DINAMICA
 					string free = "";
 					if (s->simboloInicializado)
 					{
@@ -1261,24 +1282,41 @@ ATRIBUICAO_NAO_DECLARACATIVA:
 					// atualiza a tradução final
 					$$.traducao = $3.traducao + tradConversao + free + tamanhoTrad + malloc 
 											  + "\tstrcpy(" + s->labelReal + ", " + labelExp + ")" + ";" + " // " + $1.label + "\n\t" 
-											  + StringDinamicaTamanho(s->labelReal) + " = " + tamanhoLabel + ";\n"; // altera a variável de guarda o tamanho dessa string (TK_ID)
+											  + StringDinamicaTamanho(s->labelReal) + " = " + tamanhoLabel + ";\n"; // altera a variável que guarda o tamanho dessa string (LEFT)
 				}
 				else
 				{
-					// Calcular tamanho da string dinâmica exp usando um loop e colocar em tmpTamanhoExp
-					// calcular o tamanho que deve ser alocado, usando o tamanho * sizeof(char)
-					// transformar a string estática TK_ID em uma dinâmica na tabela de strings
-					// registrar que ocorreu essa transição e guardar o maior tamamnho estático dela
+					// STRING LEFT ESTATICA, STRING RIGHT DINAMICA
+
+					// Calcular tamanho da string right dinâmica 
+					string tamanhoLabel = novaVarTemp(TIPO_INT);
+					string tamanhoTrad = "\t" + tamanhoLabel + " = " + StringDinamicaTamanho(labelExp) + ";\n";
+
 					// dar free 
+					string free = "\tfree(" + s->labelReal + ");\n";
+
+					// calcular o tamanho que deve ser alocado, usando o tamanho * sizeof(char)					
 					// alocar nova string
+					string malloc = StringMalloc(s->labelReal, tamanhoLabel);
+
+					// transformar a string estática TK_ID em uma dinâmica na tabela de strings
+					sinfoVar->éDinâmica = true;
+					// registrar que ocorreu essa transição e guardar o maior tamamnho estático dela
+					// OBS: O maior tamanho de string estática fica salvo em sinfoVar->tamanho
+					sinfoVar->transicionou = true; 					
+										
 					// strcopy final
 					// atualizar traducao final
+					$$.traducao = $3.traducao + tradConversao + free + tamanhoTrad + malloc 
+											  + "\tstrcpy(" + s->labelReal + ", " + labelExp + "); // " + $1.label + "\n\t"
+											  + StringDinamicaTamanho(s->labelReal) + " = " + tamanhoLabel + ";\n"; // altera a variável que guarda o tamanho dessa string (LEFT)
 				}
 			}
 			else
 			{
 				if (sinfoVar->éDinâmica)
 				{
+					// STRING LEFT DINAMICA, STRING RIGHT ESTATICA
 					string free = "";
 					if (s->simboloInicializado)
 					{
@@ -1292,6 +1330,7 @@ ATRIBUICAO_NAO_DECLARACATIVA:
 				}
 				else
 				{
+					// STRING LEFT ESTATICA, STRING RIGHT ESTATICA
 					int tamanho = 0; 
 
 					if (sinfoVar->tamanho > sinfoExp->tamanho)
@@ -1875,6 +1914,9 @@ string ConversaoCodIntermediario(string labelA, TIPO tipoB, string& labelB)
 // Retorna um código intermediário inline para calcular, dada uma label de uma string dinâmica, o seu tamanho
 // Recebe como entrada uma referência de uma string tamanho, que se transformará no label da variável com o tamanho final da string
 // Recebe também a string com a label da string dinâmica que terá seu tamanho calculado
+// TODO: ISSO VAI TER QUE MUDAR PARA PODER LER A ENTRADA DE UMA STRING DINAMICA, USANDO UM BUFFER
+// E REALOCAÇÃO DE PONTEIROS PARA LER TODA A STRING DINAMICA DE ENTRADA SEM ESTOURAR O BUFFER,
+// REGISTRANDO O TAMANHO CORRETO DESSA STRING DINÂMICA E SALVANDO ELA NO LABEL CORRETO
 string StringDinamicaCalcSize(string& tamanho, string labelString)
 {
 	tamanho = novaVarTemp(TIPO_INT);
@@ -1909,6 +1951,110 @@ string StringMalloc(string labelString, string labelComQntCharOuConstante)
 string StringDinamicaTamanho(string labelString)
 {
 	return labelString + str_length_suffix;
+}
+
+// Serve para atribuir uma string à outra, mesmo que elas não sejam do mesmo tipo (Dinâmica ou estática);
+// lString -> label de usuário string da esquerda
+// rString -> label real da string da direita
+// Retorna a tradução para a atribuiçao de lString = rString
+string StringAtribuição(string lString, string rString)
+{
+	string retorno = "";
+
+	string lString_labelReal = varNomeReal(lString); // O label real do ID que será atribuido um valor
+	string labelExp = rString; // O label real da expressão que será atribuida no ID
+
+	StringInfo* sinfoVar = tabelaStrings[lString_labelReal];						
+	StringInfo* sinfoExp = tabelaStrings[labelExp];			
+
+	Simbolo* s = obterSimbolo(lString); // O Símbolo 
+
+	if (sinfoExp->éDinâmica)
+	{
+		if (sinfoVar->éDinâmica)
+		{
+			// STRING LEFT DINAMICA, STRING RIGHT DINAMICA
+			string free = "";
+			if (s->simboloInicializado)
+			{
+				free = "\tfree(" + s->labelReal + ");\n";
+			}
+
+			// Calcular tamanho da string dinâmica exp (labelExp) e colocar em tmpTamanhoExp				
+			string tamanhoLabel = novaVarTemp(TIPO_INT);
+			string tamanhoTrad = "\t" + tamanhoLabel + " = " + StringDinamicaTamanho(labelExp) + ";\n";
+			// calcula o tamanho que deve ser alocado, usando o tamanho * sizeof(char)
+			// alocar essa quantia
+			string malloc = StringMalloc(s->labelReal, tamanhoLabel);
+			// atualiza a tradução final
+			retorno = 	free + tamanhoTrad + malloc 
+						+ "\tstrcpy(" + s->labelReal + ", " + labelExp + ")" + ";" + " // " + lString + "\n\t" 
+						+ StringDinamicaTamanho(s->labelReal) + " = " + tamanhoLabel + ";\n"; // altera a variável que guarda o tamanho dessa string (LEFT)
+		}
+		else
+		{
+			// STRING LEFT ESTATICA, STRING RIGHT DINAMICA
+
+			// Calcular tamanho da string right dinâmica 
+			string tamanhoLabel = novaVarTemp(TIPO_INT);
+			string tamanhoTrad = "\t" + tamanhoLabel + " = " + StringDinamicaTamanho(labelExp) + ";\n";
+
+			// dar free 
+			string free = "\tfree(" + s->labelReal + ");\n";
+
+			// calcular o tamanho que deve ser alocado, usando o tamanho * sizeof(char)					
+			// alocar nova string
+			string malloc = StringMalloc(s->labelReal, tamanhoLabel);
+
+			// transformar a string estática TK_ID em uma dinâmica na tabela de strings
+			sinfoVar->éDinâmica = true;
+			// registrar que ocorreu essa transição e guardar o maior tamamnho estático dela
+			// OBS: O maior tamanho de string estática fica salvo em sinfoVar->tamanho
+			sinfoVar->transicionou = true; 					
+											
+			// traducao final
+			retorno = 	free + tamanhoTrad + malloc 
+						+ "\tstrcpy(" + s->labelReal + ", " + labelExp + "); // " + lString + "\n\t"
+						+ StringDinamicaTamanho(s->labelReal) + " = " + tamanhoLabel + ";\n"; // altera a variável que guarda o tamanho dessa string (LEFT)
+		}
+	}
+	else
+	{
+		if (sinfoVar->éDinâmica)
+		{
+			// STRING LEFT DINAMICA, STRING RIGHT ESTATICA
+			string free = "";
+			if (s->simboloInicializado)
+			{
+				free = "\tfree(" + s->labelReal + ");\n";
+			}
+
+			string malloc = StringMalloc(s->labelReal, to_string(sinfoExp->tamanho));
+			retorno =   free + malloc 
+						+ "\tstrcpy(" + s->labelReal + ", " + labelExp +")" + ";" + " // " + lString + "\n\t" 
+						+ StringDinamicaTamanho(s->labelReal) + " = " + to_string(sinfoExp->tamanho) + ";\n";	
+		}
+		else
+		{
+			// STRING LEFT ESTATICA, STRING RIGHT ESTATICA
+			int tamanho = 0; 
+
+			// Determina o tamanho da string da esquerda (ID) baseado em qual string pode suportar mais chars
+			if (sinfoVar->tamanho > sinfoExp->tamanho)
+			{
+				tamanho = sinfoVar->tamanho;
+			}
+			else
+			{
+				tamanho = sinfoExp->tamanho;
+			}
+
+			sinfoVar->tamanho = tamanho; 
+			retorno = "\tstrcpy(" + s->labelReal + ", " + labelExp +")" + ";" + " // " + lString + "\n";					
+		}
+	}
+
+	return retorno;
 }
 
 // Usado para inicializar as estruturas e controladores usados no compilador;
