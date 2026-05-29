@@ -136,6 +136,9 @@ void inicializarTabelaFormatting();
 void tabelaFormattingAdd(TIPO tipo, string cFormato);
 bool tipoDiretoCodIntermediario(TIPO tipo);
 StringInfo* novaString();
+string StringDinamicaCalcSize(string& tamanho, string labelString);
+string StringMalloc(string labelString, string labelComQntCharOuConstante);
+string StringDinamicaTamanho(string labelString);
 
 // Variáveis
 int var_temp_qnt; // Contador de variáveis temporárias
@@ -819,11 +822,10 @@ EXPRESSAO:
 				sinfo->tamanho = sinfoId->tamanho;	
 			}		
 			else
-			{
-				string tmpA = novaVarTemp(TIPO_INT); // O tamanho da string que está guardada em TK_ID					
-				string tmpB = novaVarTemp(TIPO_INT); // sizeof(char)
-				string tmpC = novaVarTemp(TIPO_INT); // tamanho * sizeof(char)				
-				malloc = "\t" + tmpA + " = " + idNomeReal + str_length_suffix + ";\n\t" + tmpB + " = sizeof(char);\n\t" + tmpC + " = " + tmpA + " * " + tmpB + ";\n\t" + $$.label + " = " + "(char*) malloc(" + tmpC + ");\n";
+			{				
+				string tamStringId = StringDinamicaTamanho(idNomeReal);
+				string tmp = StringMalloc($$.label, tamStringId); // aloca a string dinâmica para essa expressão
+				malloc = tmp + "\t" + StringDinamicaTamanho($$.label) + " = " + tamStringId + ";\n"; // também altera a variável para guardar o tamanho dessa string dinâmica				
 			}
 
 			tabelaStrings[$$.label] = sinfo;
@@ -1250,22 +1252,16 @@ ATRIBUICAO_NAO_DECLARACATIVA:
 						free = "\tfree(" + s->labelReal + ");\n";
 					}
 
-					string tmpTamanhoExp = novaVarTemp(TIPO_INT); // O tamanho da string que estamos colocando em TK_ID; Tem que calcular em tempo de exec.															
-					string charAtualLabel = novaVarTemp(TIPO_CHAR); // O caractere que está sendo lido no momento
-					string exp = novaVarTemp(TIPO_BOOL); // A expressão charAtualLabel != 
-					string expNegada = novaVarTemp(TIPO_BOOL); // !exp
-
-					// Calcular tamanho da string dinâmica exp (labelExp) usando um loop e colocar em tmpTamanhoExp				
-					// TODO: Tem coisa alí que não é permitida no código intermediário (exp = charAtualLabel != '\0' precisa ser quebrado em mais passos e != não pode existir no código intermediário )	
-					string loop = "\t" + tmpTamanhoExp + " = 0;\n" + "label_contador_inicio_" + to_string(label_qnt) + ":\n\t" + charAtualLabel + " = " + labelExp + "[" + tmpTamanhoExp + "];\n\t" + exp + " = " + charAtualLabel + " != '\\0';\n\t" 
-									+ expNegada + " = !" + exp + ";\n" + string("\tif (") + expNegada + ")\n\t\tgoto label_contador_fim_" + to_string(label_qnt) + ";\n\t" + tmpTamanhoExp + " = " + tmpTamanhoExp + " + 1;\n\t"
-									+ "goto label_contador_inicio_" + to_string(label_qnt) + ";\nlabel_contador_fim_" + to_string(label_qnt) + ":\n\t" + tmpTamanhoExp + " = " + tmpTamanhoExp + " + 1;\n";
-					label_qnt++;
-
-					// calcular o tamanho que deve ser alocado, usando o tamanho * sizeof(char)
+					// Calcular tamanho da string dinâmica exp (labelExp) e colocar em tmpTamanhoExp				
+					string tamanhoLabel = novaVarTemp(TIPO_INT);
+					string tamanhoTrad = "\t" + tamanhoLabel + " = " + StringDinamicaTamanho(labelExp) + ";\n";
+					// calcula o tamanho que deve ser alocado, usando o tamanho * sizeof(char)
 					// alocar essa quantia
-					// atualizar a tradução final com a tradConversao + loop + free + malloc e strcpy final
-					$$.traducao = $3.traducao + tradConversao + loop; //OBS: INCOMPLETO
+					string malloc = StringMalloc(s->labelReal, tamanhoLabel);
+					// atualiza a tradução final
+					$$.traducao = $3.traducao + tradConversao + free + tamanhoTrad + malloc 
+											  + "\tstrcpy(" + s->labelReal + ", " + labelExp + ")" + ";" + " // " + $1.label + "\n\t" 
+											  + StringDinamicaTamanho(s->labelReal) + " = " + tamanhoLabel + ";\n"; // altera a variável de guarda o tamanho dessa string (TK_ID)
 				}
 				else
 				{
@@ -1289,17 +1285,24 @@ ATRIBUICAO_NAO_DECLARACATIVA:
 						free = "\tfree(" + s->labelReal + ");\n";
 					}
 
-					int tamanho = sinfoExp->tamanho; 
-
-					string tmpA = novaVarTemp(TIPO_INT); // O tamanho da string que estamos colocando em TK_ID					
-					string tmpB = novaVarTemp(TIPO_INT); // sizeof(char)
-					string tmpC = novaVarTemp(TIPO_INT); // tamanho * sizeof(char)
-					string malloc = "\t" + tmpA + " = " + to_string(tamanho) + ";\n\t" + tmpB + " = sizeof(char);\n\t" + tmpC + " = " + tmpA + " * " + tmpB + ";\n\t" + s->labelReal + " = (char*) malloc(" + tmpC + ");\n";
-					$$.traducao = $3.traducao + tradConversao + free + malloc + "\tstrcpy(" + s->labelReal + ", " + labelExp +")" + ";" + " // " + $1.label + "\n\t" + s->labelReal + str_length_suffix + " = " + to_string(tamanho) + ";\n";	
+					string malloc = StringMalloc(s->labelReal, to_string(sinfoExp->tamanho));
+					$$.traducao = $3.traducao + tradConversao + free + malloc 
+							 		+ "\tstrcpy(" + s->labelReal + ", " + labelExp +")" + ";" + " // " + $1.label + "\n\t" 
+									+ StringDinamicaTamanho(s->labelReal) + " = " + to_string(sinfoExp->tamanho) + ";\n";	
 				}
 				else
 				{
-					int tamanho = sinfoVar->tamanho + sinfoExp->tamanho - 1; // Desconsiderando um dos \0 // OBS: AQUI DEVERIA SER QUAL É O MAIOR TAMANHO, NAO A CONCATENACAO DAS STRINGS
+					int tamanho = 0; 
+
+					if (sinfoVar->tamanho > sinfoExp->tamanho)
+					{
+						tamanho = sinfoVar->tamanho;
+					}
+					else
+					{
+						tamanho = sinfoExp->tamanho;
+					}
+
 					sinfoVar->tamanho = tamanho; // Aumenta o tamanho da string estática					
 					$$.traducao = $3.traducao + tradConversao + "\tstrcpy(" + s->labelReal + ", " + labelExp +")" + ";" + " // " + $1.label + "\n";					
 				}
@@ -1867,6 +1870,45 @@ string ConversaoCodIntermediario(string labelA, TIPO tipoB, string& labelB)
 	labelB = novaVarTemp(tipoB);
 	s = labelB + " = " + "(" + tipoCodIntermediario(tipoB) + ")" + " " + labelA + ";\n";
 	return s;
+}
+
+// Retorna um código intermediário inline para calcular, dada uma label de uma string dinâmica, o seu tamanho
+// Recebe como entrada uma referência de uma string tamanho, que se transformará no label da variável com o tamanho final da string
+// Recebe também a string com a label da string dinâmica que terá seu tamanho calculado
+string StringDinamicaCalcSize(string& tamanho, string labelString)
+{
+	tamanho = novaVarTemp(TIPO_INT);
+	string charAtualLabel = novaVarTemp(TIPO_CHAR); // O caractere que está sendo lido no momento	
+	string exp = novaVarTemp(TIPO_BOOL); // A expressão charAtualLabel == '\0'	
+
+	// Calcular tamanho da string dinâmica de label labelString usando um loop e colocar na variavel de label tamanho					
+	string loop = "\t" + tamanho + " = 0;\n" + "label_contador_inicio_" + to_string(label_qnt) + ":\n\t" 
+					+ charAtualLabel + " = " + labelString + "[" + tamanho + "];\n\t"					
+					+ exp + " = " + charAtualLabel + " == '\\0';\n\t" 					
+					+ string("\tif (") + exp + ")\n\t\tgoto label_contador_fim_" + to_string(label_qnt) + ";\n\t" 
+					+ tamanho + " = " + tamanho + " + 1;\n\t"
+					+ "goto label_contador_inicio_" + to_string(label_qnt) + ";\nlabel_contador_fim_" + to_string(label_qnt) + ":\n\t" 
+					+ tamanho + " = " + tamanho + " + 1;\n";
+	label_qnt++;
+	return loop;
+}
+
+// Retorna o código intermediário usado para alocar uma string dinâmica em labelString 
+// Recebe uma labelString que será a label que receberá a string alocada e
+// Recebe labelComQntCharOuConstante, que é uma string de um int constante (ex.: to_string(5)) ou uma label que contém a quantia de caracteres (\0 deve estar incluído) que será alocada
+string StringMalloc(string labelString, string labelComQntCharOuConstante)
+{	
+	string tmpA = novaVarTemp(TIPO_INT); // O tamanho da string 				
+	string tmpB = novaVarTemp(TIPO_INT); // sizeof(char)
+	string tmpC = novaVarTemp(TIPO_INT); // tamanho * sizeof(char)
+	string malloc = "\t" + tmpA + " = " + labelComQntCharOuConstante + ";\n\t" + tmpB + " = sizeof(char);\n\t" + tmpC + " = " + tmpA + " * " + tmpB + ";\n\t" + labelString + " = (char*) malloc(" + tmpC + ");\n";
+	return malloc;
+}
+
+// Retorna a label da variável que guarda 
+string StringDinamicaTamanho(string labelString)
+{
+	return labelString + str_length_suffix;
 }
 
 // Usado para inicializar as estruturas e controladores usados no compilador;

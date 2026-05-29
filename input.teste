@@ -1,6 +1,8 @@
-char charString = 'a';
+string a;
+string b;
 
-if (true)
-{
-    char teste = 't';
-}
+a = "Teste";
+b = a;
+
+output a;
+output b;
