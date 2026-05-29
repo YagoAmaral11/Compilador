@@ -140,6 +140,9 @@ StringInfo* novaString();
 string StringDinamicaCalcSize(string& tamanho, string labelString);
 string StringMalloc(string labelString, string labelComQntCharOuConstante);
 string StringDinamicaTamanho(string labelString);
+string StringAtribuição(string lString, string rString);
+string DeclararVariaveisTemporarias(bool* b, TIPO* tipoErrado);
+string DeclararVariaveisUsuario(bool* b, TIPO* tipoErrado);
 
 // Variáveis
 int var_temp_qnt; // Contador de variáveis temporárias
@@ -238,97 +241,32 @@ unordered_map<string, StringInfo*> tabelaStrings;
 
 OUTPUT: 
 	COMANDOS
-	{
-		// TODO: Depois separar em funções
+	{		
+		codigo_gerado = "#include <stdio.h>\n#include <string.h>\n#include <stdlib.h>\n" "\nint main(void)\n{\n";						
+		bool abort = false;
+		TIPO tipo;
 
-		codigo_gerado = "#include <stdio.h>\n#include <string.h>\n#include <stdlib.h>\n"
-						"\nint main(void)\n{\n";						
-
-
-		codigo_gerado += "\t// Variaveis Temporarias\n";
-		int i = 0;
-		while (!tipoDosTemporarios.empty())
-		{			 
-			TIPO tipoVar = tipoDosTemporarios.front();			
-			
-			if (tipoDiretoCodIntermediario(tipoVar))
-			{
-				codigo_gerado += "\t" + tipoCodIntermediario(tipoVar) + " " + tmpVarPrefix + to_string(i) + ";" + " // " + tipoParaString(tipoVar) + "\n";			
-			}
-			else if (tipoVar == TIPO_STRING)
-			{				
-				StringInfo* sinfo = tabelaStrings[tmpVarPrefix + to_string(i)];
-
-				if (sinfo->éDinâmica)
-				{
-					// Usar char*
-					codigo_gerado += string("\tchar* ") + tmpVarPrefix + to_string(i) + ";" + " // " + tipoParaString(tipoVar) + "\n";			
-					codigo_gerado += string("\tint ") + tmpVarPrefix + to_string(i) + str_length_suffix + ";\n";
-
-					if (sinfo->transicionou)
-					{						
-						codigo_gerado += StringMalloc(tmpVarPrefix + to_string(i), to_string(sinfo->tamanho));
-					}
-				}
-				else
-				{
-					// Usar char[]
-					codigo_gerado += string("\tchar ") + tmpVarPrefix + to_string(i) + "[" + to_string(sinfo->tamanho) + "]" + ";" + " // " + tipoParaString(tipoVar) + "\n";	
-				}
-			}			
-			else
-			{
-				semanticError("Uma variável do tipo " + tipoParaString(tipoVar) + " não pode ser declarada");
-				YYABORT;
-			}
-
-			tipoDosTemporarios.pop();
-			i++;
-		}						
-		
-		codigo_gerado += "\n\t// Variaveis De Usuario\n";				
-		while (!ordemDeclaracaoSimbolos.empty())
-		{			 
-			Simbolo* s = ordemDeclaracaoSimbolos.front();
-			TIPO tipoVar = s->tipoDeclarado;
-			
-			if (tipoDiretoCodIntermediario(tipoVar))
-			{
-				codigo_gerado += "\t" + tipoCodIntermediario(s->tipoDeclarado) + " " + s->labelReal + ";" + " // " + s->labelUsuario + "\n";
-			}			
-			else if (tipoVar == TIPO_STRING)
-			{
-				StringInfo* sinfo = tabelaStrings[s->labelReal];
-
-				if (sinfo->éDinâmica)
-				{
-					// Usar char*
-					codigo_gerado += string("\tchar* ") + s->labelReal + ";" + " // " + s->labelUsuario + "\n";		
-					codigo_gerado += "\tint " + s->labelReal + str_length_suffix + ";\n";
-
-					if (sinfo->transicionou)
-					{						
-						codigo_gerado += StringMalloc(s->labelReal, to_string(sinfo->tamanho));
-					}
-				}
-				else
-				{
-					// Usar char[]
-					codigo_gerado += string("\tchar ") + s->labelReal + "[" + to_string(sinfo->tamanho) + "]" + ";" + " // " + s->labelUsuario + "\n";	
-				}
-			}
-			else
-			{
-				semanticError("Uma variável do tipo " + tipoParaString(tipoVar) + " não pode ser declarada");
-				YYABORT;
-			}
-
-			ordemDeclaracaoSimbolos.pop();
+		// OBS: A ordem aqui importa muito! 
+		// Na declaração de usuário, novas variáveis temporárias são geradas!		
+		string varUser = DeclararVariaveisUsuario(&abort, &tipo);
+		if (abort)
+		{
+			semanticError("Uma variável do tipo " + tipoParaString(tipo) + " não pode ser declarada");
+			YYABORT;
 		}
-		codigo_gerado += "\n";		
 
-		codigo_gerado += "\t// Codigo do Usuario\n";
-		codigo_gerado += $1.traducao;
+		string varTemp = DeclararVariaveisTemporarias(&abort, &tipo);				
+		if (abort)
+		{
+			semanticError("Uma variável do tipo " + tipoParaString(tipo) + " não pode ser declarada");
+			YYABORT;
+		}
+
+		string codigoUser = "\t// Codigo do Usuario\n" + $1.traducao;
+
+		codigo_gerado += varTemp;
+		codigo_gerado += varUser;
+		codigo_gerado += codigoUser;
 
 		codigo_gerado += "\n\treturn 0;" "\n}\n";
 	}
@@ -1258,95 +1196,9 @@ ATRIBUICAO_NAO_DECLARACATIVA:
 		Simbolo* s = obterSimbolo($1.label);
 
 		if ($1.tipo == TIPO_STRING)
-		{						
-			StringInfo* sinfoVar = tabelaStrings[varNomeReal($1.label)];						
-			StringInfo* sinfoExp = tabelaStrings[labelExp];			
-
-			if (sinfoExp->éDinâmica)
-			{
-				if (sinfoVar->éDinâmica)
-				{
-					// STRING LEFT DINAMICA, STRING RIGHT DINAMICA
-					string free = "";
-					if (s->simboloInicializado)
-					{
-						free = "\tfree(" + s->labelReal + ");\n";
-					}
-
-					// Calcular tamanho da string dinâmica exp (labelExp) e colocar em tmpTamanhoExp				
-					string tamanhoLabel = novaVarTemp(TIPO_INT);
-					string tamanhoTrad = "\t" + tamanhoLabel + " = " + StringDinamicaTamanho(labelExp) + ";\n";
-					// calcula o tamanho que deve ser alocado, usando o tamanho * sizeof(char)
-					// alocar essa quantia
-					string malloc = StringMalloc(s->labelReal, tamanhoLabel);
-					// atualiza a tradução final
-					$$.traducao = $3.traducao + tradConversao + free + tamanhoTrad + malloc 
-											  + "\tstrcpy(" + s->labelReal + ", " + labelExp + ")" + ";" + " // " + $1.label + "\n\t" 
-											  + StringDinamicaTamanho(s->labelReal) + " = " + tamanhoLabel + ";\n"; // altera a variável que guarda o tamanho dessa string (LEFT)
-				}
-				else
-				{
-					// STRING LEFT ESTATICA, STRING RIGHT DINAMICA
-
-					// Calcular tamanho da string right dinâmica 
-					string tamanhoLabel = novaVarTemp(TIPO_INT);
-					string tamanhoTrad = "\t" + tamanhoLabel + " = " + StringDinamicaTamanho(labelExp) + ";\n";
-
-					// dar free 
-					string free = "\tfree(" + s->labelReal + ");\n";
-
-					// calcular o tamanho que deve ser alocado, usando o tamanho * sizeof(char)					
-					// alocar nova string
-					string malloc = StringMalloc(s->labelReal, tamanhoLabel);
-
-					// transformar a string estática TK_ID em uma dinâmica na tabela de strings
-					sinfoVar->éDinâmica = true;
-					// registrar que ocorreu essa transição e guardar o maior tamamnho estático dela
-					// OBS: O maior tamanho de string estática fica salvo em sinfoVar->tamanho
-					sinfoVar->transicionou = true; 					
-										
-					// strcopy final
-					// atualizar traducao final
-					$$.traducao = $3.traducao + tradConversao + free + tamanhoTrad + malloc 
-											  + "\tstrcpy(" + s->labelReal + ", " + labelExp + "); // " + $1.label + "\n\t"
-											  + StringDinamicaTamanho(s->labelReal) + " = " + tamanhoLabel + ";\n"; // altera a variável que guarda o tamanho dessa string (LEFT)
-				}
-			}
-			else
-			{
-				if (sinfoVar->éDinâmica)
-				{
-					// STRING LEFT DINAMICA, STRING RIGHT ESTATICA
-					string free = "";
-					if (s->simboloInicializado)
-					{
-						free = "\tfree(" + s->labelReal + ");\n";
-					}
-
-					string malloc = StringMalloc(s->labelReal, to_string(sinfoExp->tamanho));
-					$$.traducao = $3.traducao + tradConversao + free + malloc 
-							 		+ "\tstrcpy(" + s->labelReal + ", " + labelExp +")" + ";" + " // " + $1.label + "\n\t" 
-									+ StringDinamicaTamanho(s->labelReal) + " = " + to_string(sinfoExp->tamanho) + ";\n";	
-				}
-				else
-				{
-					// STRING LEFT ESTATICA, STRING RIGHT ESTATICA
-					int tamanho = 0; 
-
-					if (sinfoVar->tamanho > sinfoExp->tamanho)
-					{
-						tamanho = sinfoVar->tamanho;
-					}
-					else
-					{
-						tamanho = sinfoExp->tamanho;
-					}
-
-					sinfoVar->tamanho = tamanho; // Aumenta o tamanho da string estática					
-					$$.traducao = $3.traducao + tradConversao + "\tstrcpy(" + s->labelReal + ", " + labelExp +")" + ";" + " // " + $1.label + "\n";					
-				}
-			}
-		}
+		{
+			$$.traducao = $3.traducao + tradConversao + StringAtribuição($1.label, labelExp);
+		}		
 
 		s->simboloInicializado = true;		
 	}
@@ -1375,6 +1227,21 @@ ATRIBUICAO_DECLARACATIVA:
 		$$.traducao = $3.traducao + "\t" + tradConversao + varNomeReal($1.label) + " = " + labelExp + ";" + " // " + $1.label + "\n";
 
 		Simbolo* s = obterSimbolo($1.label);
+
+		if ($1.tipo == TIPO_STRING)
+		{
+			StringInfo* sinfoVar = tabelaStrings[s->labelReal];
+			StringInfo* sinfoExp = tabelaStrings[labelExp];
+			
+			if (sinfoExp->éDinâmica == false)
+			{
+				sinfoVar->éDinâmica = false;
+				sinfoVar->tamanho = sinfoExp->tamanho;
+			}
+
+			$$.traducao = $3.traducao + tradConversao + StringAtribuição($1.label, labelExp);
+		}
+
 		s->simboloInicializado = true;
 	}
 	| DECLARACAO '=' TK_INPUT
@@ -2055,6 +1922,102 @@ string StringAtribuição(string lString, string rString)
 	}
 
 	return retorno;
+}
+
+string DeclararVariaveisTemporarias(bool* b, TIPO* tipoErrado)
+{
+	string varTemp = "\t// Variaveis Temporarias\n";
+	int i = 0;
+	while (!tipoDosTemporarios.empty())
+	{			 
+		TIPO tipoVar = tipoDosTemporarios.front();			
+		
+		if (tipoDiretoCodIntermediario(tipoVar))
+		{
+			varTemp += "\t" + tipoCodIntermediario(tipoVar) + " " + tmpVarPrefix + to_string(i) + ";" + " // " + tipoParaString(tipoVar) + "\n";			
+		}
+		else if (tipoVar == TIPO_STRING)
+		{				
+			StringInfo* sinfo = tabelaStrings[tmpVarPrefix + to_string(i)];
+
+			if (sinfo->éDinâmica)
+			{
+				// Usar char*
+				varTemp += string("\tchar* ") + tmpVarPrefix + to_string(i) + ";" + " // " + tipoParaString(tipoVar) + "\n";			
+				varTemp += string("\tint ") + tmpVarPrefix + to_string(i) + str_length_suffix + ";\n";
+
+				// OBS: AS variáveis string temporárias podem se transicionar?
+				if (sinfo->transicionou)
+				{						
+					varTemp += StringMalloc(tmpVarPrefix + to_string(i), to_string(sinfo->tamanho));
+				}
+			}
+			else
+			{
+				// Usar char[]
+				varTemp += string("\tchar ") + tmpVarPrefix + to_string(i) + "[" + to_string(sinfo->tamanho) + "]" + ";" + " // " + tipoParaString(tipoVar) + "\n";	
+			}
+		}			
+		else
+		{
+			*b = true;
+			*tipoErrado = tipoVar;
+			return varTemp;
+		}
+
+		tipoDosTemporarios.pop();
+		i++;
+	}	
+
+	return varTemp;					
+}
+
+string DeclararVariaveisUsuario(bool* b, TIPO* tipoErrado)
+{
+	string codigo_gerado = "\n\t// Variaveis De Usuario\n";		
+
+	while (!ordemDeclaracaoSimbolos.empty())
+	{			 
+		Simbolo* s = ordemDeclaracaoSimbolos.front();
+		TIPO tipoVar = s->tipoDeclarado;
+		
+		if (tipoDiretoCodIntermediario(tipoVar))
+		{
+			codigo_gerado += "\t" + tipoCodIntermediario(s->tipoDeclarado) + " " + s->labelReal + ";" + " // " + s->labelUsuario + "\n";
+		}			
+		else if (tipoVar == TIPO_STRING)
+		{
+			StringInfo* sinfo = tabelaStrings[s->labelReal];
+
+			if (sinfo->éDinâmica)
+			{
+				// Usar char*
+				codigo_gerado += string("\tchar* ") + s->labelReal + ";" + " // " + s->labelUsuario + "\n";		
+				codigo_gerado += "\tint " + s->labelReal + str_length_suffix + ";\n";
+
+				if (sinfo->transicionou)
+				{						
+					codigo_gerado += StringMalloc(s->labelReal, to_string(sinfo->tamanho));										
+				}
+			}
+			else
+			{
+				// Usar char[]
+				codigo_gerado += string("\tchar ") + s->labelReal + "[" + to_string(sinfo->tamanho) + "]" + ";" + " // " + s->labelUsuario + "\n";	
+			}
+		}
+		else
+		{
+			*b = true;
+			*tipoErrado = tipoVar;
+			return codigo_gerado;
+		}
+
+		ordemDeclaracaoSimbolos.pop();
+	}
+	codigo_gerado += "\n";		
+
+	return codigo_gerado;
 }
 
 // Usado para inicializar as estruturas e controladores usados no compilador;

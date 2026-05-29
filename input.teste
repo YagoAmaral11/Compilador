@@ -1,4 +1,13 @@
 string a = "Teste";
+a = "Teste bem maior";
+
 string b;
-b = "Outra String";
+b = "Segunda string";
+
 a = b;
+
+output a;
+output b;
+
+string c = "Saída";
+output c;
