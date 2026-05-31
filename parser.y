@@ -1208,7 +1208,7 @@ ATRIBUICAO_NAO_DECLARACATIVA:
 		$$.traducao = $3.traducao + "\t" + tradConversao + varNomeReal($1.label) + " = " + labelExp + ";" + " // " + $1.label + "\n";
 		Simbolo* s = obterSimbolo($1.label);
 
-		if ($1.tipo == TIPO_STRING)
+		if (varTipo($1.label) == TIPO_STRING)
 		{
 			$$.traducao = $3.traducao + tradConversao + StringAtribuição($1.label, labelExp);
 		}		
@@ -1229,7 +1229,7 @@ ATRIBUICAO_NAO_DECLARACATIVA:
 		TIPO tipoExp = varTipo($1.label);		
 		$$.label = $1.label;				
 
-		if ($3.tipo == TIPO_STRING)
+		if (tipoExp == TIPO_STRING)
 		{
 			string labelExp;
 			string labelExpTamanho;
