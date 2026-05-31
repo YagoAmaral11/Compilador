@@ -1,2 +1,4 @@
-string a;
-a = input;
+char in = input;
+string a = "Teste";
+string b = input;
+output a + b;

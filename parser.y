@@ -123,7 +123,7 @@ bool podeSerConvertidoExplicitamente(TIPO a, TIPO b);
 bool podeSerConvertidoImplicitamente(TIPO a, TIPO b);
 bool operadorRelacionalDireto(YYSTYPE exp1, YYSTYPE exp2, int operador, string operadorCodInt, string& codIntFinal, string& labelFinal);
 int conversaoImpicitaOperadorBinario(YYSTYPE exp1, YYSTYPE exp2, int operador, string operadorCodIntermediario, string& labelConvertido, string& tradConversao);
-string ConversaoCodIntermediario(string labelA, TIPO tipoB, string& labelB);
+string ConversaoCodIntermediario(string labelA, TIPO tipoA, TIPO tipoB, string& labelB);
 bool operadorFuncionaEmTipo(int operadorOuToken, TIPO tipo);
 void inicializarTabelaDeOperadores();
 void tabelaDeOperadoresAdd(int operador, TIPO tipo);
@@ -300,7 +300,7 @@ COMANDOS_OPCIONAIS:
 ;
 
 COMANDO:
-	EXPRESSAO ';'	
+	EXPRESSAO ';'
 	{
 		$$.traducao = $1.traducao;
 	}
@@ -831,7 +831,7 @@ EXPRESSAO:
 
 		if (podeSerConvertidoExplicitamente(tipoExpressao, novoTipo))
 		{
-			tradConversao = ConversaoCodIntermediario($4.label, novoTipo, novaLabel);
+			tradConversao = ConversaoCodIntermediario($4.label, $4.tipo, novoTipo, novaLabel);
 		}
 		else
 		{
@@ -863,13 +863,13 @@ EXPRESSAO:
 			// Expressão 2 pode ser convertida no tipo de Expressão 1
 			tipoFinal = $1.tipo;
 			labelEsq = $1.label;
-			tradConversão = ConversaoCodIntermediario($3.label, $1.tipo, labelDir) + "\t";
+			tradConversão = ConversaoCodIntermediario($3.label, $3.tipo, $1.tipo, labelDir) + "\t";
 		}
 		else if (podeSerConvertidoImplicitamente($1.tipo, $3.tipo) && operadorFuncionaEmTipo(operador, $3.tipo))
 		{
 			// Expressão 1 pode ser convertida no tipo de Expressão 2
 			tipoFinal = $3.tipo;
-			tradConversão = ConversaoCodIntermediario($1.label, $3.tipo, labelEsq) + "\t";
+			tradConversão = ConversaoCodIntermediario($1.label, $1.tipo, $3.tipo, labelEsq) + "\t";
 			labelDir = $3.label;
 		}	
 		else
@@ -904,13 +904,13 @@ EXPRESSAO:
 			// Expressão 2 pode ser convertida no tipo de Expressão 1
 			tipoFinal = $1.tipo;
 			labelEsq = $1.label;
-			tradConversão = ConversaoCodIntermediario($3.label, $1.tipo, labelDir) + "\t";
+			tradConversão = ConversaoCodIntermediario($3.label, $3.tipo, $1.tipo, labelDir) + "\t";
 		}
 		else if (podeSerConvertidoImplicitamente($1.tipo, $3.tipo) && operadorFuncionaEmTipo(operador, $3.tipo))
 		{
 			// Expressão 1 pode ser convertida no tipo de Expressão 2
 			tipoFinal = $3.tipo;
-			tradConversão = ConversaoCodIntermediario($1.label, $3.tipo, labelEsq) + "\t";
+			tradConversão = ConversaoCodIntermediario($1.label, $1.tipo, $3.tipo, labelEsq) + "\t";
 			labelDir = $3.label;
 		}	
 		else
@@ -945,13 +945,13 @@ EXPRESSAO:
 			// Expressão 2 pode ser convertida no tipo de Expressão 1
 			tipoFinal = $1.tipo;
 			labelEsq = $1.label;
-			tradConversão = ConversaoCodIntermediario($3.label, $1.tipo, labelDir) + "\t";
+			tradConversão = ConversaoCodIntermediario($3.label, $3.tipo, $1.tipo, labelDir) + "\t";
 		}
 		else if (podeSerConvertidoImplicitamente($1.tipo, $3.tipo) && operadorFuncionaEmTipo(operador, $3.tipo))
 		{
 			// Expressão 1 pode ser convertida no tipo de Expressão 2
 			tipoFinal = $3.tipo;
-			tradConversão = ConversaoCodIntermediario($1.label, $3.tipo, labelEsq) + "\t";
+			tradConversão = ConversaoCodIntermediario($1.label, $1.tipo, $3.tipo, labelEsq) + "\t";
 			labelDir = $3.label;
 		}	
 		else
@@ -986,13 +986,13 @@ EXPRESSAO:
 			// Expressão 2 pode ser convertida no tipo de Expressão 1
 			tipoFinal = $1.tipo;
 			labelEsq = $1.label;
-			tradConversão = ConversaoCodIntermediario($3.label, $1.tipo, labelDir) + "\t";
+			tradConversão = ConversaoCodIntermediario($3.label, $3.tipo, $1.tipo, labelDir) + "\t";
 		}
 		else if (podeSerConvertidoImplicitamente($1.tipo, $3.tipo) && operadorFuncionaEmTipo(operador, $3.tipo))
 		{
 			// Expressão 1 pode ser convertida no tipo de Expressão 2
 			tipoFinal = $3.tipo;
-			tradConversão = ConversaoCodIntermediario($1.label, $3.tipo, labelEsq) + "\t";
+			tradConversão = ConversaoCodIntermediario($1.label, $1.tipo, $3.tipo, labelEsq) + "\t";
 			labelDir = $3.label;
 		}	
 		else
@@ -1131,7 +1131,7 @@ EXPRESSAO:
 		else if (podeSerConvertidoImplicitamente($2.tipo, TIPO_BOOL))
 		{
 			// Expressão pode virar uma booleana;
-			tradConversao = ConversaoCodIntermediario($2.label, TIPO_BOOL, labelExp) + "\t";
+			tradConversao = ConversaoCodIntermediario($2.label, $2.tipo, TIPO_BOOL, labelExp) + "\t";
 		}
 		else
 		{
@@ -1201,7 +1201,7 @@ ATRIBUICAO_NAO_DECLARACATIVA:
 		if (varTipo($1.label) != $3.tipo)
 		{
 			// Deve ser feita uma conversão implícita, a expressão pode ser atribuída à essa variável, caso contrário a condicional de cima daria erro
-			tradConversao = ConversaoCodIntermediario($3.label, varTipo($1.label), labelExp) + "\t";
+			tradConversao = ConversaoCodIntermediario($3.label, $3.tipo, varTipo($1.label), labelExp) + "\t";
 		}
 
 		$$.label = $1.label;
@@ -1268,7 +1268,7 @@ ATRIBUICAO_DECLARACATIVA:
 		if (varTipo($1.label) != $3.tipo)
 		{
 			// Deve ser feita uma conversão implícita, a expressão pode ser atribuída à essa variável, caso contrário a condicional de cima daria erro
-			tradConversao = ConversaoCodIntermediario($3.label, varTipo($1.label), labelExp) + "\t";
+			tradConversao = ConversaoCodIntermediario($3.label, $3.tipo, varTipo($1.label), labelExp) + "\t";
 		}
 
 		$$.label = $1.label;
@@ -1672,6 +1672,9 @@ void inicializarTabelaConversao()
 	// CONVERSÕES DE BOOL
 
 	// CONVERSÕES DE CHAR
+	tipoAtual = {TIPO_CHAR, TIPO_STRING};
+	conversaoInfoAtual.tipo = TipoDeConversao::Implicita;
+	tabelaConversao[tipoAtual] = conversaoInfoAtual;
 }
 
 void inicializarTabelaDeOperadores()
@@ -1785,13 +1788,13 @@ int conversaoImpicitaOperadorBinario(YYSTYPE exp1, YYSTYPE exp2, int operador, s
 	else if (operadorFuncionaEmTipo(operador, exp1.tipo) && podeSerConvertidoImplicitamente(exp2.tipo, exp1.tipo))
 	{
 		// Expressão 2 pode ser convertida no tipo de Expressão 1				
-		tradConversao = ConversaoCodIntermediario(exp2.label, exp1.tipo, labelConvertido);
+		tradConversao = ConversaoCodIntermediario(exp2.label, exp2.tipo, exp1.tipo, labelConvertido);
 		return 1;
 	}
 	else if (podeSerConvertidoImplicitamente(exp1.tipo, exp2.tipo) && operadorFuncionaEmTipo(operador, exp2.tipo))
 	{
 		// Expressão 1 pode ser convertida no tipo de Expressão 2		
-		tradConversao = ConversaoCodIntermediario(exp1.label, exp2.tipo, labelConvertido);
+		tradConversao = ConversaoCodIntermediario(exp1.label, exp1.tipo, exp2.tipo, labelConvertido);
 		return 2;
 	}	
 	else
@@ -1842,15 +1845,35 @@ bool operadorRelacionalDireto(YYSTYPE exp1, YYSTYPE exp2, int operador, string o
 	return true;
 }
 
-// Realiza uma conversão simples no código intermediário (por meio de cast no C) com label 'labelA' para uma do tipo 'B',
+// Realiza a conversão de uma variável de labelA com tipoA para o tipoB, guardando o resultado em labelB
+// Para tipos nativos, realiza uma conversão simples no código intermediário (por meio de cast no C) com label 'labelA' para uma do tipo 'B',
 // retornando o código intermediário dessa conversão e o label da variável temporário que guarda a variável convertida 'labelB'
-// OBS: Não verifica se a conversão pode ou não ser feita, apenas faz um casting no código intermediário; Para verificar, use 
+// Para tipos complexos, realiza uma série de procedimentos
+// OBS: Na maioria dos casos, não verifica se a conversão pode ou não ser feita, apenas faz um casting no código intermediário; Para verificar, use 
 // podeSerConvertidoExplicitamente ou podeSerConvertidoImplicitamente
-string ConversaoCodIntermediario(string labelA, TIPO tipoB, string& labelB)
+string ConversaoCodIntermediario(string labelA, TIPO tipoA, TIPO tipoB, string& labelB)
 {
 	string s; 
 	labelB = novaVarTemp(tipoB);
-	s = labelB + " = " + "(" + tipoCodIntermediario(tipoB) + ")" + " " + labelA + ";\n";
+
+	if (tipoA == TIPO_CHAR && tipoB == TIPO_STRING)
+	{
+		StringInfo* sinfo = novaString();
+		sinfo->éDinâmica = true;
+		tabelaStrings[labelB] = sinfo;
+
+		string malloc = StringMalloc(labelB, to_string(2)); // char e \0
+		s = malloc 
+			+ "\t" + labelB + "[" + to_string(0) + "] = " + labelA + ";\n" 
+			+ "\t" + labelB + "[" + to_string(1) + "] = \'\\0\';\n"
+			+ "\t" + StringDinamicaTamanho(labelB) + " = 2;\n" 
+			; 
+	}
+	else
+	{
+		s = labelB + " = " + "(" + tipoCodIntermediario(tipoB) + ")" + " " + labelA + ";\n";
+	}	
+
 	return s;
 }
 
