@@ -1,2 +1,4 @@
-int a;
-a = input;
+while (true)
+{    
+    "teste";
+}

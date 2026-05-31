@@ -19,6 +19,8 @@ extern FILE* yyin; // yyin é o arquivo de entrada do flex; ao alterar, é poss�
 #define YYSTYPE atributos // YYSTYPE é o tipo de valor usado para cada token da árvore sintática; É diferente do valor numérico gerador por %token
 #define TIPO int // É um macro para diferenciar o tipo da variável; É possível usar os tokens de tipo (%token TIPO_...) pq os dois são int no fim
 #define str_length_suffix "_strlen" // Usado ao declarar string dinâmicas; Um inteiro de mesmo nome da variável usada para guardar a string terá esse sufixo
+#define str_inputBuffer_len 256 // O tamanho do buffer usado para ler uma string inserida pelo usuário
+#define str_inputBuffer_label "strInputBuffer" // O label do buffer
 
 // Structs
 // TODO: Criar estruturas melhores para identificar os Tokens
@@ -153,6 +155,8 @@ int label_qnt_casos; // Contador de labels de casos criados; Usado para diferenc
 
 int linha = 1; // Contador da linha do comando; Atualizado no lexer
 int coluna = 0; // Contador de caracteres do comando; Atualizado no lexer
+
+bool usandoInputBuffer = false; // Se em algum momento do código se lê uma input
 
 string codigo_gerado; // Código intermediário gerado pelo compilador
 vector<unordered_map<string, Simbolo*>> tabelaSimbolos; // Tabela de símbolos
@@ -1813,28 +1817,113 @@ string ConversaoCodIntermediario(string labelA, TIPO tipoB, string& labelB)
 	return s;
 }
 
-// Retorna um código intermediário inline para calcular, dada uma label de uma string dinâmica, o seu tamanho
+// Retorna um código intermediário inline para ler uma string dinâmica enviada pelo usuário, salvando ela em uma variável (labelString) e salvando um label para o seu tamanho
 // Recebe como entrada uma referência de uma string tamanho, que se transformará no label da variável com o tamanho final da string
-// Recebe também a string com a label da string dinâmica que terá seu tamanho calculado
-// TODO: ISSO VAI TER QUE MUDAR PARA PODER LER A ENTRADA DE UMA STRING DINAMICA, USANDO UM BUFFER
-// E REALOCAÇÃO DE PONTEIROS PARA LER TODA A STRING DINAMICA DE ENTRADA SEM ESTOURAR O BUFFER,
-// REGISTRANDO O TAMANHO CORRETO DESSA STRING DINÂMICA E SALVANDO ELA NO LABEL CORRETO
-string StringDinamicaCalcSize(string& tamanho, string labelString)
+// Recebe por referência também a string com a label da string dinâmica que receberá 
+string StringDinamicaCalcSize(string& tamanho, string& labelString)
 {
-	tamanho = novaVarTemp(TIPO_INT);
-	string charAtualLabel = novaVarTemp(TIPO_CHAR); // O caractere que está sendo lido no momento	
-	string exp = novaVarTemp(TIPO_BOOL); // A expressão charAtualLabel == '\0'	
+	usandoInputBuffer = true; // Marca o input buffer como usado
+	// OBS: O buffer não é preciso alocar pois ele já é alocado no final, caso usandoInputBuffer = true
 
-	// Calcular tamanho da string dinâmica de label labelString usando um loop e colocar na variavel de label tamanho					
-	string loop = "\t" + tamanho + " = 0;\n" + "label_contador_inicio_" + to_string(label_qnt) + ":\n\t" 
-					+ charAtualLabel + " = " + labelString + "[" + tamanho + "];\n\t"					
-					+ exp + " = " + charAtualLabel + " == '\\0';\n\t" 					
-					+ string("\tif (") + exp + ")\n\t\tgoto label_contador_fim_" + to_string(label_qnt) + ";\n\t" 
-					+ tamanho + " = " + tamanho + " + 1;\n\t"
-					+ "goto label_contador_inicio_" + to_string(label_qnt) + ";\nlabel_contador_fim_" + to_string(label_qnt) + ":\n\t" 
-					+ tamanho + " = " + tamanho + " + 1;\n";
-	label_qnt++;
-	return loop;
+	tamanho = novaVarTemp(TIPO_INT); // O label da var temp que guarda o tamanho total da string 
+	string indexLabel = novaVarTemp(TIPO_INT); // O label da var temp que guarda qual o índice do buffer que está sendo lido no momento
+	string bufferLabel = string(str_inputBuffer_label); // O label do buffer para a entrada de strings
+	string charSizeLabel = novaVarTemp(TIPO_INT); // O label da variável que carregará sizeof(char)
+	string charLidoLabel = novaVarTemp(TIPO_CHAR); // O label da var temp que guarda qual caractere foi lido da entrada
+	string bufferTamanho = novaVarTemp(TIPO_CHAR); // O tamanho real do buffer para chars (-2 pois começa em 0 e \0 tem que aparecer no final do buffer pro código funcionar)
+
+	string stringAtual = novaVarTemp(TIPO_STRING); // (O label da) A string que está sendo "construída" atualmente
+
+	StringInfo* stringAtualInfo = novaString();
+	stringAtualInfo->éDinâmica = true;
+	tabelaStrings[stringAtual] = stringAtualInfo;
+
+	string stringTemp = novaVarTemp(TIPO_STRING); // (O label de) Uma string temporária usada na concatenação das strings
+
+	StringInfo* stringTempInfo = novaString();
+	stringTempInfo->éDinâmica = true;
+	tabelaStrings[stringTemp] = stringTempInfo;
+
+	labelString = novaVarTemp(TIPO_STRING); // (O label da) A string temporária final com a string lida pelo usuário
+
+	StringInfo* stringFinalInfo = novaString();
+	stringFinalInfo->éDinâmica = true;
+	tabelaStrings[labelString] = stringFinalInfo;
+
+	int labelWhileIndex = label_qnt; label_qnt++; // Um identificador único para os labels do while
+	int labelIfIndex = label_qnt; label_qnt++;	// Um identificador único para os labels do if
+
+	string whileExpLabel = novaVarTemp(TIPO_BOOL);
+	string ifExpLabel = novaVarTemp(TIPO_BOOL);
+	string ifExpNotLabel = novaVarTemp(TIPO_BOOL);
+
+	string indexPlusLabel = novaVarTemp(TIPO_INT); 
+
+	string tamanhoPlus = novaVarTemp(TIPO_INT);
+	string stringTmpTamanho = novaVarTemp(TIPO_INT);
+
+	string trad;
+
+	trad = 	"\t"   + charSizeLabel + " = sizeof(char);\n" 
+			+ "\t" + bufferTamanho + " = " + to_string(str_inputBuffer_len) + " - 2;\n"
+			+ "\t" + stringAtual + " = (char*) malloc(" + charSizeLabel + ");\n"
+			+ "\t" + "strcpy(" + stringAtual + ", \"\");\n"
+			+ "\t" + "scanf(\"%c\", &" + charLidoLabel + ");\n"
+				   + "strscanner_ini_" + to_string(labelWhileIndex) + ":\n"  
+			+ "\t" + whileExpLabel + " = " + charLidoLabel + " == \'\\0\';\n"
+			+ "\t" + "if (" + whileExpLabel + ")" + 
+			+ "\t" + "\t" + "goto strscanner_fim_" + to_string(labelWhileIndex) + ";\n"
+			+ "\t" + tamanho + " = " + tamanho + " + 1;\n"
+			+ "\t" + bufferLabel + "[" + indexLabel + "] = " + charLidoLabel + ";\n" 
+			+ "\t" + ifExpLabel + " = " + indexLabel + " == " + bufferTamanho + ";\n"
+			+ "\t" + ifExpNotLabel + " = !" + ifExpLabel + ";\n"
+			+ "\t" + "if (" + ifExpNotLabel + ")" +
+			+ "\t" + "\t" + "goto strscanner_if_fim_" + to_string(labelIfIndex) + ";\n"
+			+ "\t" + indexPlusLabel + " = " + indexLabel + " + 1;\n"
+			+ "\t" + bufferLabel + "[" + indexPlusLabel + "] = \'\\0\';\n"
+			+ "\t" + tamanhoPlus + " = " + tamanho + " + 1;\n"
+			+ "\t" + stringTmpTamanho + " = " + tamanhoPlus + " * " + charSizeLabel + ";\n"
+			+ "\t" + stringTemp + " = (char*) malloc(" +  stringTmpTamanho + ");\n"
+			+ "\t" + "strcpy(" + stringTemp + ", " + stringAtual + ");\n"
+			+ "\t" + "strcat(" + stringTemp + ", " + bufferLabel + ");\n"
+			+ "\t" + "free(" + stringAtual + ");\n"
+			+ "\t" + stringAtual + " = (char*) malloc(" + stringTmpTamanho + ");\n"
+			+ "\t" + "strcpy(" + stringAtual + ", " + stringTemp + ");\n"
+			+ "\t" + "free(" + stringTemp + ");\n"
+			+ "\t" + indexLabel + " = -1;\n"			
+				   + "strscanner_if_fim_" + to_string(labelIfIndex) + ":\n"
+			+ "\t" + indexLabel + " = " + indexLabel + " + 1;\n"
+			+ "\t" + "scanf(\"%c\", &" + charLidoLabel + ");\n"
+			       + "strscanner_fim_" + to_string(labelWhileIndex) + ":\n"  
+			+ "\t" + tamanhoPlus + " = " + tamanho + " + 1;\n"
+			+ "\t" + stringTmpTamanho + " = " + tamanhoPlus + " * " + charSizeLabel + ";\n"
+			+ "\t" + stringTemp + " = (char*) malloc(" +  stringTmpTamanho + ");\n"
+			+ "\t" + "strcpy(" + stringTemp + ", " + stringAtual + ");\n"
+			+ "\t" + "strcat(" + stringTemp + ", " + bufferLabel + ");\n"
+			+ "\t" + "free(" + stringAtual + ");\n"
+			+ "\t" + stringAtual + " = (char*) malloc(" + stringTmpTamanho + ");\n"
+			+ "\t" + "strcpy(" + stringAtual + ", " + stringTemp + ");\n"
+			+ "\t" + "free(" + stringTemp + ");\n"
+			+ "\t" + labelString + " = (char*) malloc(" + stringTmpTamanho + ");\n"
+			+ "\t" + "strcpy(" + labelString + ", " + stringAtual + ");\n"
+			+ "\t" + StringDinamicaTamanho(labelString) + " = " + tamanhoPlus + ";\n";			
+	
+	// while V
+		// Fazer a EXP do if V
+		// Fazer o IF V
+			// Colocar o \0 no buffer V
+			// Fazer a concatenação do buffer na string atual V
+			// Zerar o índice V
+		// Colocar o label de fim do IF V
+		// Aumentar o índice V
+		// Scanear o lido V
+	// fim do while V
+	// Fazer a concatenação final do buffer V
+	// Criar uma nova string temporária dinâmica V
+	// Copiar o lido nessa string temporária dinâmica V
+	// Salvar o tamanho dessa string temporária dinâmica (tamanhoPlus -> mesmo tamanho da string final) V
+
+	return trad;
 }
 
 // Retorna o código intermediário usado para alocar uma string dinâmica em labelString 
@@ -1962,6 +2051,7 @@ string StringAtribuição(string lString, string rString)
 string DeclararVariaveisTemporarias(bool* b, TIPO* tipoErrado)
 {
 	string varTemp = "\t// Variaveis Temporarias\n";
+
 	int i = 0;
 	while (!tipoDosTemporarios.empty())
 	{			 
@@ -2003,6 +2093,8 @@ string DeclararVariaveisTemporarias(bool* b, TIPO* tipoErrado)
 		tipoDosTemporarios.pop();
 		i++;
 	}	
+
+	varTemp += "\tchar " str_inputBuffer_label "[" + to_string(str_inputBuffer_len) + "];\n";
 
 	return varTemp;					
 }
