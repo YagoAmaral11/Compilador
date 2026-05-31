@@ -1187,6 +1187,12 @@ ATRIBUICAO_NAO_DECLARACATIVA:
 		string labelExp = $3.label;
 		string tradConversao = "";
 
+		if (varExiste($1.label) == false)
+		{
+			semanticError("A variável " + $1.label + " é desconhecida");
+			YYABORT;
+		}
+
 		if (!tipoPodeSerAtribuido(varTipo($1.label), $3.tipo))
 		{
 			semanticError("Erro de tipo -> A expressão de tipo '" + tipoParaString($3.tipo) + "' não é do tipo esperado (" + tipoParaString(varTipo($1.label)) + ").");
@@ -1213,20 +1219,36 @@ ATRIBUICAO_NAO_DECLARACATIVA:
 	{
 		// Ler o input do tipo do TK_ID
 		// Aqui não tem como TK_INPUT virar expressão pois é necessário inferir o tipo de TK_INPUT
-		TIPO tipoExp = varTipo($1.label);
-		string labelExp = novaVarTemp(tipoExp);
-		
-		if (tabelaFormatting.find(tipoExp) == tabelaFormatting.end())
+
+		if (varExiste($1.label) == false)
 		{
-			semanticError("Não é possível ler o tipo " + tipoParaString(tipoExp) + " na entrada.");
+			semanticError("A variável " + $1.label + " é desconhecida");
 			YYABORT;
 		}
 
-		$$.label = $1.label;
-		$$.traducao = "\tscanf(\"" + tabelaFormatting[tipoExp] + "\", &" + labelExp + ");\n" + "\t" + varNomeReal($1.label) + " = " + labelExp + ";" + " // " + $1.label + "\n";
+		TIPO tipoExp = varTipo($1.label);		
+		$$.label = $1.label;				
+
+		if ($3.tipo == TIPO_STRING)
+		{
+			string labelExp;
+			string labelExpTamanho;
+			string trad = StringDinamicaInput(labelExpTamanho, labelExp);
+			$$.traducao = trad + StringAtribuição($1.label, labelExp);
+		}
+		else if (tabelaFormatting.find(tipoExp) == tabelaFormatting.end())
+		{
+			semanticError("Não é possível ler o tipo " + tipoParaString(tipoExp) + " na entrada.");
+			YYABORT;
+		}		
+		else
+		{
+			string labelExp = novaVarTemp(tipoExp);
+			$$.traducao = "\tscanf(\"" + tabelaFormatting[tipoExp] + "\", &" + labelExp + ");\n" + "\t" + varNomeReal($1.label) + " = " + labelExp + ";" + " // " + $1.label + "\n";
+		}		
 		
 		Simbolo* s = obterSimbolo($1.label);
-		s->simboloInicializado = true; 
+		s->simboloInicializado = true; 		
 	}	
 ;
 
@@ -1275,17 +1297,26 @@ ATRIBUICAO_DECLARACATIVA:
 		// Ler o input do tipo da Declaração
 		// Aqui não tem como TK_INPUT virar expressão pois é necessário inferir o tipo de TK_INPUT
 
-		TIPO tipoExp = varTipo($1.label);
-		string labelExp = novaVarTemp(tipoExp);
+		TIPO tipoExp = varTipo($1.label);		
+		$$.label = $1.label;
 
-		if (tabelaFormatting.find(tipoExp) == tabelaFormatting.end())
+		if (tipoExp == TIPO_STRING)
+		{
+			string labelExp;
+			string labelExpTamanho;
+			string trad = StringDinamicaInput(labelExpTamanho, labelExp);
+			$$.traducao = trad + StringAtribuição($$.label, labelExp);
+		}
+		else if (tabelaFormatting.find(tipoExp) == tabelaFormatting.end())
 		{
 			semanticError("Não é possível ler o tipo " + tipoParaString(tipoExp) + " na entrada.");
 			YYABORT;
 		}
-
-		$$.label = $1.label;
-		$$.traducao = "\tscanf(\"" + tabelaFormatting[tipoExp] + "\", &" + labelExp + ");\n" + "\t" + varNomeReal($1.label) + " = " + labelExp + ";" + " // " + $1.label + "\n";
+		else 
+		{
+			string labelExp = novaVarTemp(tipoExp);
+			$$.traducao = "\tscanf(\"" + tabelaFormatting[tipoExp] + "\", &" + labelExp + ");\n" + "\t" + varNomeReal($1.label) + " = " + labelExp + ";" + " // " + $1.label + "\n";
+		}				
 
 		Simbolo* s = obterSimbolo($1.label);
 		s->simboloInicializado = true; 

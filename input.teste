@@ -1,2 +1,12 @@
-string a = input(string);
+string a  = "Teste";
 output a;
+
+string b = input;
+output b;
+
+string c;
+c = input;
+output c;
+
+var d = input(string);
+output d;
