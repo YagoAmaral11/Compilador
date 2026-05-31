@@ -139,7 +139,7 @@ void inicializarTabelaFormatting();
 void tabelaFormattingAdd(TIPO tipo, string cFormato);
 bool tipoDiretoCodIntermediario(TIPO tipo);
 StringInfo* novaString();
-string StringDinamicaCalcSize(string& tamanho, string labelString);
+string StringDinamicaInput(string& tamanho, string& labelString);
 string StringMalloc(string labelString, string labelComQntCharOuConstante);
 string StringDinamicaTamanho(string labelString);
 string StringAtribuição(string lString, string rString);
@@ -807,7 +807,10 @@ EXPRESSAO:
 			sinfo->éDinâmica = true;
 			tabelaStrings[$$.label] = sinfo;
 
-			// TODO: FAZER; INCOMPLETO
+			// TODO: MELHORAR ISSO DEPOIS, APENAS PARA TESTES
+			string labelFinal;
+			string labelTamanho;
+			$$.traducao = StringDinamicaInput(labelTamanho, labelFinal);
 		}
 	}
 	|	
@@ -1390,6 +1393,9 @@ Simbolo* novaVar(TIPO tipo, string labelUsuario)
 StringInfo* novaString()
 {
 	StringInfo* s = new StringInfo;
+	s->éDinâmica = false;
+	s->transicionou = false;
+	s->tamanho = 0;
 	return s;
 }
 
@@ -1820,7 +1826,7 @@ string ConversaoCodIntermediario(string labelA, TIPO tipoB, string& labelB)
 // Retorna um código intermediário inline para ler uma string dinâmica enviada pelo usuário, salvando ela em uma variável (labelString) e salvando um label para o seu tamanho
 // Recebe como entrada uma referência de uma string tamanho, que se transformará no label da variável com o tamanho final da string
 // Recebe por referência também a string com a label da string dinâmica que receberá 
-string StringDinamicaCalcSize(string& tamanho, string& labelString)
+string StringDinamicaInput(string& tamanho, string& labelString)
 {
 	usandoInputBuffer = true; // Marca o input buffer como usado
 	// OBS: O buffer não é preciso alocar pois ele já é alocado no final, caso usandoInputBuffer = true
@@ -1830,7 +1836,7 @@ string StringDinamicaCalcSize(string& tamanho, string& labelString)
 	string bufferLabel = string(str_inputBuffer_label); // O label do buffer para a entrada de strings
 	string charSizeLabel = novaVarTemp(TIPO_INT); // O label da variável que carregará sizeof(char)
 	string charLidoLabel = novaVarTemp(TIPO_CHAR); // O label da var temp que guarda qual caractere foi lido da entrada
-	string bufferTamanho = novaVarTemp(TIPO_CHAR); // O tamanho real do buffer para chars (-2 pois começa em 0 e \0 tem que aparecer no final do buffer pro código funcionar)
+	string bufferTamanho = novaVarTemp(TIPO_INT); // O tamanho real do buffer para chars (-2 pois começa em 0 e \0 tem que aparecer no final do buffer pro código funcionar)
 
 	string stringAtual = novaVarTemp(TIPO_STRING); // (O label da) A string que está sendo "construída" atualmente
 
@@ -1864,9 +1870,13 @@ string StringDinamicaCalcSize(string& tamanho, string& labelString)
 
 	string trad;
 
+	// TODO: É colocado um \0 no final da leitura, quando sai do while?
+
 	trad = 	"\t"   + charSizeLabel + " = sizeof(char);\n" 
 			+ "\t" + bufferTamanho + " = " + to_string(str_inputBuffer_len) + " - 2;\n"
 			+ "\t" + stringAtual + " = (char*) malloc(" + charSizeLabel + ");\n"
+			+ "\t" + tamanho + " = 0;\n"
+			+ "\t" + indexLabel + " = 0;\n"
 			+ "\t" + "strcpy(" + stringAtual + ", \"\");\n"
 			+ "\t" + "scanf(\"%c\", &" + charLidoLabel + ");\n"
 				   + "strscanner_ini_" + to_string(labelWhileIndex) + ":\n"  

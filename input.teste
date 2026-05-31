@@ -1,4 +1,1 @@
-while (true)
-{    
-    "teste";
-}
+input(string);
