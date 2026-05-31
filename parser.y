@@ -806,11 +806,11 @@ EXPRESSAO:
 			StringInfo* sinfo = novaString();
 			sinfo->éDinâmica = true;
 			tabelaStrings[$$.label] = sinfo;
-
-			// TODO: MELHORAR ISSO DEPOIS, APENAS PARA TESTES
+			
 			string labelFinal;
 			string labelTamanho;
-			$$.traducao = StringDinamicaInput(labelTamanho, labelFinal);
+			string trad = StringDinamicaInput(labelTamanho, labelFinal);
+			$$.traducao = trad + StringMalloc($$.label, labelTamanho) + "\tstrcpy(" + $$.label + ", " + labelFinal + ");\n\t" + StringDinamicaTamanho($$.label) + " = " + labelTamanho + ";\n";			
 		}
 	}
 	|	
@@ -1870,8 +1870,6 @@ string StringDinamicaInput(string& tamanho, string& labelString)
 
 	string trad;
 
-	// TODO: É colocado um \0 no final da leitura, quando sai do while?
-
 	trad = 	"\t"   + charSizeLabel + " = sizeof(char);\n" 
 			+ "\t" + bufferTamanho + " = " + to_string(str_inputBuffer_len) + " - 2;\n"
 			+ "\t" + stringAtual + " = (char*) malloc(" + charSizeLabel + ");\n"
@@ -1880,14 +1878,14 @@ string StringDinamicaInput(string& tamanho, string& labelString)
 			+ "\t" + "strcpy(" + stringAtual + ", \"\");\n"
 			+ "\t" + "scanf(\"%c\", &" + charLidoLabel + ");\n"
 				   + "strscanner_ini_" + to_string(labelWhileIndex) + ":\n"  
-			+ "\t" + whileExpLabel + " = " + charLidoLabel + " == \'\\0\';\n"
-			+ "\t" + "if (" + whileExpLabel + ")" + 
+			+ "\t" + whileExpLabel + " = " + charLidoLabel + " == \'\\n\';\n"
+			+ "\t" + "if (" + whileExpLabel + ")\n" + 
 			+ "\t" + "\t" + "goto strscanner_fim_" + to_string(labelWhileIndex) + ";\n"
 			+ "\t" + tamanho + " = " + tamanho + " + 1;\n"
 			+ "\t" + bufferLabel + "[" + indexLabel + "] = " + charLidoLabel + ";\n" 
 			+ "\t" + ifExpLabel + " = " + indexLabel + " == " + bufferTamanho + ";\n"
 			+ "\t" + ifExpNotLabel + " = !" + ifExpLabel + ";\n"
-			+ "\t" + "if (" + ifExpNotLabel + ")" +
+			+ "\t" + "if (" + ifExpNotLabel + ")\n" +
 			+ "\t" + "\t" + "goto strscanner_if_fim_" + to_string(labelIfIndex) + ";\n"
 			+ "\t" + indexPlusLabel + " = " + indexLabel + " + 1;\n"
 			+ "\t" + bufferLabel + "[" + indexPlusLabel + "] = \'\\0\';\n"
@@ -1904,8 +1902,10 @@ string StringDinamicaInput(string& tamanho, string& labelString)
 				   + "strscanner_if_fim_" + to_string(labelIfIndex) + ":\n"
 			+ "\t" + indexLabel + " = " + indexLabel + " + 1;\n"
 			+ "\t" + "scanf(\"%c\", &" + charLidoLabel + ");\n"
+			+ "\t" + "goto strscanner_ini_" + to_string(labelWhileIndex) + ";\n"
 			       + "strscanner_fim_" + to_string(labelWhileIndex) + ":\n"  
 			+ "\t" + tamanhoPlus + " = " + tamanho + " + 1;\n"
+			+ "\t" + bufferLabel + "[" + indexLabel + "] = \'\\0\';\n" 
 			+ "\t" + stringTmpTamanho + " = " + tamanhoPlus + " * " + charSizeLabel + ";\n"
 			+ "\t" + stringTemp + " = (char*) malloc(" +  stringTmpTamanho + ");\n"
 			+ "\t" + "strcpy(" + stringTemp + ", " + stringAtual + ");\n"
@@ -1916,7 +1916,8 @@ string StringDinamicaInput(string& tamanho, string& labelString)
 			+ "\t" + "free(" + stringTemp + ");\n"
 			+ "\t" + labelString + " = (char*) malloc(" + stringTmpTamanho + ");\n"
 			+ "\t" + "strcpy(" + labelString + ", " + stringAtual + ");\n"
-			+ "\t" + StringDinamicaTamanho(labelString) + " = " + tamanhoPlus + ";\n";			
+			+ "\t" + StringDinamicaTamanho(labelString) + " = " + tamanhoPlus + ";\n"
+			+ "\t" + tamanho + " = " + tamanhoPlus + ";\n";
 	
 	// while V
 		// Fazer a EXP do if V

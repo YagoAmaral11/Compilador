@@ -1,1 +1,2 @@
-input(string);
+string a = input(string);
+output a;
