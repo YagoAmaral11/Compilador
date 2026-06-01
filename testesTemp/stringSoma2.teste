@@ -1,0 +1,4 @@
+string a = "Primeira";
+string b;
+b = "Segunda";
+string c = a + b;

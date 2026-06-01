@@ -1352,8 +1352,7 @@ ATRIBUICAO_DECLARACATIVA:
 		{
 			$$.label = $2.label;			
 
-			Simbolo* s = novaVar($4.tipo, $2.label); // O tipo declarado é o tipo da expressão, por inferência
-			s->simboloInicializado = true;			
+			Simbolo* s = novaVar($4.tipo, $2.label); // O tipo declarado é o tipo da expressão, por inferência			
 
 			tabelaSimbolos.back()[$2.label] = s;						
 			ordemDeclaracaoSimbolos.push(s);
@@ -1375,6 +1374,8 @@ ATRIBUICAO_DECLARACATIVA:
 				tabelaStrings[s->labelReal] = sinfoVar;
 				$$.traducao = $4.traducao + StringAtribuição($2.label, $4.label);				
 			}
+
+			s->simboloInicializado = true;			
 		}
 	}
 ;
