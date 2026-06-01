@@ -721,7 +721,7 @@ ESCAPE:
 
 EXPRESSAO:
 	TK_NUM
-	{
+	{		
 		$$.label = novaVarTemp($1.tipo);
 		$$.tipo = $1.tipo;
 		$$.traducao = "\t" + $$.label + " = " + $1.label + ";\n";
@@ -883,6 +883,90 @@ EXPRESSAO:
 		$$.tipo = tipoFinal;
 		$$.traducao = $1.traducao + $3.traducao + "\t" + tradConversão + $$.label + " = " + labelEsq + " " + operadorCodInt + " " + labelDir + ";\n";
 
+		if (tipoFinal == TIPO_STRING)
+		{			
+			StringInfo* sinfo = novaString();
+			sinfo->éDinâmica = true;
+
+			StringInfo* sinfoA = tabelaStrings[labelEsq];
+			StringInfo* sinfoB = tabelaStrings[labelDir];			
+
+			string tamanhoALabel = novaVarTemp(TIPO_INT);
+			string tamanhoBLabel = novaVarTemp(TIPO_INT);
+			string tamanhoSemiFinalLabel = novaVarTemp(TIPO_INT);
+			string tamanhoFinalLabel = novaVarTemp(TIPO_INT);
+
+			string tamanhoAtrad; 
+			string tamanhoBtrad;
+
+			string concatLabel = novaVarTemp(TIPO_STRING);
+
+			if (sinfoA->éDinâmica)
+			{
+				tamanhoAtrad = "\t" + tamanhoALabel + " = " + StringDinamicaTamanho(labelEsq) + ";\n";
+			}
+			else
+			{
+				tamanhoAtrad = "\t" + tamanhoALabel + " = " + to_string(sinfoA->tamanho) + ";\n" ;
+			}
+
+			if (sinfoB->éDinâmica)
+			{
+				tamanhoBtrad = "\t" + tamanhoBLabel + " = " + StringDinamicaTamanho(labelDir) + ";\n";
+			}
+			else
+			{
+				tamanhoBtrad = "\t" + tamanhoBLabel + " = " + to_string(sinfoB->tamanho) + ";\n" ;
+			}
+			
+
+			string somaTamanhos = novaVarTemp(TIPO_INT);
+			string somaTamanhosLess = novaVarTemp(TIPO_INT);
+
+			string alloc;
+			string finalCpy;
+			string finalLength;
+
+			StringInfo* concatsinfo = novaString();
+
+			if (sinfoA->éDinâmica == false && sinfoB->éDinâmica == false)
+			{
+				sinfo->éDinâmica = false;
+				sinfo->tamanho = sinfoA->tamanho + sinfoB->tamanho - 1;
+				alloc = "";
+				
+				concatsinfo->éDinâmica = false;
+				concatsinfo->tamanho = sinfo->tamanho;								
+
+				finalLength = "";
+			}
+			else
+			{
+				sinfo->éDinâmica = true;
+				concatsinfo->éDinâmica = true;
+
+				alloc = StringMalloc(concatLabel, somaTamanhosLess) + StringMalloc($$.label, somaTamanhosLess);
+
+				finalLength = "\t" + StringDinamicaTamanho($$.label) + " = " + somaTamanhosLess + ";\n" ;
+			}
+
+			finalCpy = 	  	"\tstrcpy(" + concatLabel + ", " + labelEsq + ");\n"
+							+ "\t" + "strcat(" + concatLabel + ", " + labelDir + ");\n"
+							+ "\t" + "strcpy(" + $$.label + ", " + concatLabel + ");\n";
+
+			tabelaStrings[$$.label] = sinfo;
+			tabelaStrings[concatLabel] = concatsinfo;
+
+			$$.traducao =   $1.traducao + $3.traducao + "\t" + tradConversão 
+							+ tamanhoAtrad
+							+ tamanhoBtrad							
+							+ "\t" + somaTamanhos + " = " + tamanhoALabel + " + " + tamanhoBLabel + ";\n"
+							+ "\t" + somaTamanhosLess + " = " + somaTamanhos + " - 1;\n"
+							+ alloc
+							+ finalCpy
+							+ finalLength
+							;
+		}
 	}
 	| EXPRESSAO '-' EXPRESSAO
 	{
@@ -1714,6 +1798,8 @@ void inicializarTabelaDeOperadores()
 	tabelaDeOperadoresAdd(OP_IGUAL, TIPO_CHAR);
 	tabelaDeOperadoresAdd(OP_DIFERENTE, TIPO_CHAR);
 
+	// STRING
+	tabelaDeOperadoresAdd('+', TIPO_STRING);
 }
 
 void inicializarTabelaFormatting()
@@ -2159,7 +2245,8 @@ string DeclararVariaveisTemporarias(bool* b, TIPO* tipoErrado)
 		i++;
 	}	
 
-	varTemp += "\tchar " str_inputBuffer_label "[" + to_string(str_inputBuffer_len) + "];\n";
+	if (usandoInputBuffer)
+		varTemp += "\tchar " str_inputBuffer_label "[" + to_string(str_inputBuffer_len) + "];\n";
 
 	return varTemp;					
 }
@@ -2175,7 +2262,7 @@ string DeclararVariaveisUsuario(bool* b, TIPO* tipoErrado)
 		
 		if (tipoDiretoCodIntermediario(tipoVar))
 		{
-			codigo_gerado += "\t" + tipoCodIntermediario(s->tipoDeclarado) + " " + s->labelReal + ";" + " // " + s->labelUsuario + "\n";
+			codigo_gerado += "\t" + tipoCodIntermediario(s->tipoDeclarado) + " " + s->labelReal + ";" + " // " + tipoParaString(s->tipoDeclarado) + " " + s->labelUsuario + "\n";
 		}			
 		else if (tipoVar == TIPO_STRING)
 		{
@@ -2184,7 +2271,7 @@ string DeclararVariaveisUsuario(bool* b, TIPO* tipoErrado)
 			if (sinfo->éDinâmica)
 			{
 				// Usar char*
-				codigo_gerado += string("\tchar* ") + s->labelReal + ";" + " // " + s->labelUsuario + "\n";		
+				codigo_gerado += string("\tchar* ") + s->labelReal + ";" + " // " + tipoParaString(s->tipoDeclarado) + " " + s->labelUsuario + "\n";		
 				codigo_gerado += "\tint " + s->labelReal + str_length_suffix + ";\n";
 
 				if (sinfo->transicionou)
@@ -2195,7 +2282,7 @@ string DeclararVariaveisUsuario(bool* b, TIPO* tipoErrado)
 			else
 			{
 				// Usar char[]
-				codigo_gerado += string("\tchar ") + s->labelReal + "[" + to_string(sinfo->tamanho) + "]" + ";" + " // " + s->labelUsuario + "\n";	
+				codigo_gerado += string("\tchar ") + s->labelReal + "[" + to_string(sinfo->tamanho) + "]" + ";" + " // " + tipoParaString(s->tipoDeclarado) + " " + s->labelUsuario + "\n";	
 			}
 		}
 		else
@@ -2217,6 +2304,7 @@ void initialize()
 {
 	var_temp_qnt = 0;
 	var_qnt = 0;
+	usandoInputBuffer = false;
 
 	inicializarTabelaConversao();
 	inicializarTabelaDeOperadores();

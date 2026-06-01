@@ -11,10 +11,11 @@ ESPACO [ \t]
 DIGITO [0-9]
 LETRA [a-zA-Z_]
 CARACTER ([^\'\\\n]|\\.)
+CARACTER_STR ([^\"\\\n]|\\.)
 
 DELIM {ESPACO}+
 CHAR \'{CARACTER}\'
-STRING \"({CARACTER})*\"
+STRING \"({CARACTER_STR})*\"
 BOOL (true|false)
 INT [-]?{DIGITO}+
 FLOAT [-]?{DIGITO}+\.{DIGITO}+(([eE])([-])?{DIGITO}+)?
