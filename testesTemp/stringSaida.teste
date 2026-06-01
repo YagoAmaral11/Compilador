@@ -1,0 +1,4 @@
+output "Teste";
+
+string s = "Teste2";
+output s;

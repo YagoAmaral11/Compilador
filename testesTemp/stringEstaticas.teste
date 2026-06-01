@@ -1,0 +1,3 @@
+string s = "Teste";
+string b = "Drive";
+s = b;
