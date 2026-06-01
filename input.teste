@@ -1,11 +1,2 @@
-char in = input;
-
-string a = "Teste";
-string b = 'p';
-string c = a + b;
-output c;
-
-string x = input;
-
-output "Saida 1" + "b";
-output x;
+var s = input(string);
+output s;
