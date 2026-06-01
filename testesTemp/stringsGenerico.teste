@@ -1,0 +1,11 @@
+string a = "Teste";
+string b;
+var c = input(string);
+
+b = input;
+
+output a;
+output b;
+output c;
+output a + b;
+output a + b + c + 'F';
