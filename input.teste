@@ -1,11 +1,24 @@
-char in = input;
+int a = 10;
+float b = 2.0;
 
-string a = "Teste";
-string b = 'p';
-string c = a + b;
-output c;
-
-string x = input;
-
-output "Saida 1" + "b";
-output x;
+switch(a)
+{
+    case 10:
+        switch(b)
+        {
+            case 10:
+                output a;
+                break;
+            case 2.0:
+                output b;
+                break;
+            default:
+                output "Erro!";
+        }
+        break;
+    case 2.0:
+        output a;
+        break;
+    default:
+        output "Erro!";
+}
