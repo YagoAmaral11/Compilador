@@ -1,0 +1,8 @@
+int tamanho = 0;
+char charString = 'a';
+while (charString != '\0')
+{
+    tamanho = tamanho + 1;    
+    "teste";
+}
+tamanho = tamanho + 1;

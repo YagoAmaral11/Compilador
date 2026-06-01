@@ -1,7 +1,11 @@
-var teste = input(int);
-float teste2 = input;
-char teste3 = input;
+char in = input;
 
-output teste;
-output teste2;
-output teste3;
+string a = "Teste";
+string b = 'p';
+string c = a + b;
+output c;
+
+string x = input;
+
+output "Saida 1" + "b";
+output x;

@@ -10,12 +10,17 @@
 #include <vector>
 #include <deque>
 #include <fstream>
+#include <cstring>
+#include <stdlib.h>
 
 using namespace std;
 
 extern FILE* yyin; // yyin é o arquivo de entrada do flex; ao alterar, é possível redirecionar o fluxo da entrada do código fonte
 #define YYSTYPE atributos // YYSTYPE é o tipo de valor usado para cada token da árvore sintática; É diferente do valor numérico gerador por %token
 #define TIPO int // É um macro para diferenciar o tipo da variável; É possível usar os tokens de tipo (%token TIPO_...) pq os dois são int no fim
+#define str_length_suffix "_strlen" // Usado ao declarar string dinâmicas; Um inteiro de mesmo nome da variável usada para guardar a string terá esse sufixo
+#define str_inputBuffer_len 256 // O tamanho do buffer usado para ler uma string inserida pelo usuário
+#define str_inputBuffer_label "strInputBuffer" // O label do buffer
 
 // Structs
 // TODO: Criar estruturas melhores para identificar os Tokens
@@ -23,7 +28,7 @@ struct atributos
 {
 	string label; // "Endereço" dessa variável; O nome da variável que carrega o valor dessa árvore sintática
 	string traducao; // A tradução dessa árvore sintática para o código intermediário
-	TIPO tipo;	// Tipo do token
+	TIPO tipo;	// Tipo do token	
 };
 
 struct Simbolo
@@ -90,6 +95,14 @@ struct pair_hash
     }
 };
 
+// Usado em uma tabela para guardar informações sobre uma string, seja ela de usuário ou não
+struct StringInfo
+{
+	bool éDinâmica;
+	bool transicionou; // Se era antes uma string fixa e se transformou em uma string dinâmica;
+	int tamanho;
+};
+
 // Declarações de funções
 int yylex(void);
 void yyerror(string);
@@ -110,7 +123,7 @@ bool podeSerConvertidoExplicitamente(TIPO a, TIPO b);
 bool podeSerConvertidoImplicitamente(TIPO a, TIPO b);
 bool operadorRelacionalDireto(YYSTYPE exp1, YYSTYPE exp2, int operador, string operadorCodInt, string& codIntFinal, string& labelFinal);
 int conversaoImpicitaOperadorBinario(YYSTYPE exp1, YYSTYPE exp2, int operador, string operadorCodIntermediario, string& labelConvertido, string& tradConversao);
-string ConversaoCodIntermediario(string labelA, TIPO tipoB, string& labelB);
+string ConversaoCodIntermediario(string labelA, TIPO tipoA, TIPO tipoB, string& labelB);
 bool operadorFuncionaEmTipo(int operadorOuToken, TIPO tipo);
 void inicializarTabelaDeOperadores();
 void tabelaDeOperadoresAdd(int operador, TIPO tipo);
@@ -124,6 +137,14 @@ Caso* novaCaso(string labelCaso, TIPO tipoValor, string valorCaso);
 Caso* desempilharCaso();
 void inicializarTabelaFormatting();
 void tabelaFormattingAdd(TIPO tipo, string cFormato);
+bool tipoDiretoCodIntermediario(TIPO tipo);
+StringInfo* novaString();
+string StringDinamicaInput(string& tamanho, string& labelString);
+string StringMalloc(string labelString, string labelComQntCharOuConstante);
+string StringDinamicaTamanho(string labelString);
+string StringAtribuição(string lString, string rString);
+string DeclararVariaveisTemporarias(bool* b, TIPO* tipoErrado);
+string DeclararVariaveisUsuario(bool* b, TIPO* tipoErrado);
 
 // Variáveis
 int var_temp_qnt; // Contador de variáveis temporárias
@@ -134,6 +155,8 @@ int label_qnt_casos; // Contador de labels de casos criados; Usado para diferenc
 
 int linha = 1; // Contador da linha do comando; Atualizado no lexer
 int coluna = 0; // Contador de caracteres do comando; Atualizado no lexer
+
+bool usandoInputBuffer = false; // Se em algum momento do código se lê uma input
 
 string codigo_gerado; // Código intermediário gerado pelo compilador
 vector<unordered_map<string, Simbolo*>> tabelaSimbolos; // Tabela de símbolos
@@ -158,6 +181,9 @@ queue<Caso*> tabelaCasos; // Lista de casos para o switch;
 // ex.: "%d" para int, "%f" para float, "%c" para char... 
 // OBS: as booleanas serão um problema, pois devem ser lidas como uma string (true/false) e transformadas em seu valor inteiro 1 ou 0
 unordered_map<TIPO, string> tabelaFormatting;
+
+// Usado para guardar se uma string é dinâmica ou não e se seu tamanho é conhecido em tempo de compilação
+unordered_map<string, StringInfo*> tabelaStrings;
 
 // Macros
 #define tmpVarPrefix "tmp"
@@ -187,12 +213,13 @@ unordered_map<TIPO, string> tabelaFormatting;
 
 /* TOKEN PARA OS TIPOS DIFERENTES */
 /* OBS: Cada novo tipo adicionado, deve-se criar um token desses e alterar o yylval.tipo para o token correspondente no lexer  */
-/* 		É também necessário, para cada tipo novo, alterar: tipoCodIntermediario, tipoParaString, inicializarTabelaConversao, inicializarTabelaDeOperadores e inicializarTabelaFormatting 	*/
+/* 		É também necessário, para cada tipo novo, alterar: tipoCodIntermediario, tipoDiretoCodInterrmediario, tipoParaString, inicializarTabelaConversao, inicializarTabelaDeOperadores e inicializarTabelaFormatting 	*/
 %token TIPO_INT
 %token TIPO_FLOAT
 %token TIPO_CHAR
 %token TIPO_BOOL
 %token TIPO_VAZIO
+%token TIPO_STRING
 
 
 %start OUTPUT
@@ -218,40 +245,32 @@ unordered_map<TIPO, string> tabelaFormatting;
 
 OUTPUT: 
 	COMANDOS
-	{
-		// TODO: Depois separar em funções
+	{		
+		codigo_gerado = "#include <stdio.h>\n#include <string.h>\n#include <stdlib.h>\n" "\nint main(void)\n{\n";						
+		bool abort = false;
+		TIPO tipo;
 
-		codigo_gerado = "#include <stdio.h>\n\n"
-						"int main(void) \n{\n";						
-
-
-		codigo_gerado += "\t// Variaveis Temporarias\n";
-		int i = 0;
-		while (!tipoDosTemporarios.empty())
-		{			 
-			TIPO tipoVar = tipoDosTemporarios.front();			
-			// TODO: No futuro, verificar se esse tipo pode descrito facilmente assim no cod. intermediário
-			codigo_gerado += "\t" + tipoCodIntermediario(tipoVar) + " " + tmpVarPrefix + to_string(i) + ";" + " // " + tipoParaString(tipoVar) + "\n";			
-
-			tipoDosTemporarios.pop();
-			i++;
-		}						
-		
-		codigo_gerado += "\n\t// Variaveis De Usuario\n";				
-		while (!ordemDeclaracaoSimbolos.empty())
-		{			 
-			Simbolo* s = ordemDeclaracaoSimbolos.front();
-
-			// TODO: No futuro, verificar se esse tipo pode descrito facilmente assim no cod. intermediário
-			codigo_gerado += "\t" + tipoCodIntermediario(s->tipoDeclarado) + " " + s->labelReal + ";" + " // " + s->labelUsuario + "\n";
-
-			ordemDeclaracaoSimbolos.pop();
+		// OBS: A ordem aqui importa muito! 
+		// Na declaração de usuário, novas variáveis temporárias são geradas!		
+		string varUser = DeclararVariaveisUsuario(&abort, &tipo);
+		if (abort)
+		{
+			semanticError("Uma variável do tipo " + tipoParaString(tipo) + " não pode ser declarada");
+			YYABORT;
 		}
-		codigo_gerado += "\n";		
-		
 
-		codigo_gerado += "\t// Codigo do Usuario\n";
-		codigo_gerado += $1.traducao;
+		string varTemp = DeclararVariaveisTemporarias(&abort, &tipo);				
+		if (abort)
+		{
+			semanticError("Uma variável do tipo " + tipoParaString(tipo) + " não pode ser declarada");
+			YYABORT;
+		}
+
+		string codigoUser = "\t// Codigo do Usuario\n" + $1.traducao;
+
+		codigo_gerado += varTemp;
+		codigo_gerado += varUser;
+		codigo_gerado += codigoUser;
 
 		codigo_gerado += "\n\treturn 0;" "\n}\n";
 	}
@@ -281,7 +300,7 @@ COMANDOS_OPCIONAIS:
 ;
 
 COMANDO:
-	EXPRESSAO ';'	
+	EXPRESSAO ';'
 	{
 		$$.traducao = $1.traducao;
 	}
@@ -702,10 +721,21 @@ ESCAPE:
 
 EXPRESSAO:
 	TK_NUM
-	{
+	{		
 		$$.label = novaVarTemp($1.tipo);
 		$$.tipo = $1.tipo;
 		$$.traducao = "\t" + $$.label + " = " + $1.label + ";\n";
+
+		if ($1.tipo == TIPO_STRING)
+		{
+			// É uma string estática até então pq estamos recebendo do código fonte uma string pronta
+			StringInfo* sinfo = novaString();
+			sinfo->éDinâmica = false;
+			sinfo->tamanho = $1.label.length() - 2 + 1; // -2 aqui pq a string recebida tem dois ", +1 por causa do \0			
+			tabelaStrings[$$.label] = sinfo;
+
+			$$.traducao = "\tstrcpy(" + $$.label + ", " + $1.label + ");\n";
+		}
 	}
 	| TK_ID
 	{
@@ -727,6 +757,33 @@ EXPRESSAO:
 		$$.label = novaVarTemp(tipoId);
 		$$.tipo = tipoId;
 		$$.traducao = "\t" + $$.label + " = " + varNomeReal($1.label) + ";" + " // " + $1.label + "\n";
+
+		if (tipoId == TIPO_STRING)
+		{
+			// Cria uma variável temporária para carregar a string guardada no ID passado pelo usuário 			
+			StringInfo* sinfo = novaString();
+			string idNomeReal = varNomeReal($1.label);
+			StringInfo* sinfoId = tabelaStrings[idNomeReal];
+
+			string malloc = "";
+
+			sinfo->éDinâmica = sinfoId->éDinâmica;
+
+			if (!sinfoId->éDinâmica)
+			{
+				sinfo->tamanho = sinfoId->tamanho;	
+			}		
+			else
+			{				
+				string tamStringId = StringDinamicaTamanho(idNomeReal);
+				string tmp = StringMalloc($$.label, tamStringId); // aloca a string dinâmica para essa expressão
+				malloc = tmp + "\t" + StringDinamicaTamanho($$.label) + " = " + tamStringId + ";\n"; // também altera a variável para guardar o tamanho dessa string dinâmica				
+			}
+
+			tabelaStrings[$$.label] = sinfo;
+			$$.traducao = malloc + "\tstrcpy(" + $$.label + ", " + idNomeReal + ");\n";
+		}
+
 	}
 	| TK_INPUT '(' TK_TIPO ')'
 	{
@@ -742,6 +799,19 @@ EXPRESSAO:
 		}
 
 		$$.traducao = "\tscanf(\"" + tabelaFormatting[$3.tipo] + "\", &" + $$.label + ");\n";
+
+		if ($3.tipo == TIPO_STRING)
+		{
+			// É uma nova string dinâmica
+			StringInfo* sinfo = novaString();
+			sinfo->éDinâmica = true;
+			tabelaStrings[$$.label] = sinfo;
+			
+			string labelFinal;
+			string labelTamanho;
+			string trad = StringDinamicaInput(labelTamanho, labelFinal);
+			$$.traducao = trad + StringMalloc($$.label, labelTamanho) + "\tstrcpy(" + $$.label + ", " + labelFinal + ");\n\t" + StringDinamicaTamanho($$.label) + " = " + labelTamanho + ";\n";			
+		}
 	}
 	|	
 	'(' EXPRESSAO ')'
@@ -761,7 +831,7 @@ EXPRESSAO:
 
 		if (podeSerConvertidoExplicitamente(tipoExpressao, novoTipo))
 		{
-			tradConversao = ConversaoCodIntermediario($4.label, novoTipo, novaLabel);
+			tradConversao = ConversaoCodIntermediario($4.label, $4.tipo, novoTipo, novaLabel);
 		}
 		else
 		{
@@ -793,13 +863,13 @@ EXPRESSAO:
 			// Expressão 2 pode ser convertida no tipo de Expressão 1
 			tipoFinal = $1.tipo;
 			labelEsq = $1.label;
-			tradConversão = ConversaoCodIntermediario($3.label, $1.tipo, labelDir) + "\t";
+			tradConversão = ConversaoCodIntermediario($3.label, $3.tipo, $1.tipo, labelDir) + "\t";
 		}
 		else if (podeSerConvertidoImplicitamente($1.tipo, $3.tipo) && operadorFuncionaEmTipo(operador, $3.tipo))
 		{
 			// Expressão 1 pode ser convertida no tipo de Expressão 2
 			tipoFinal = $3.tipo;
-			tradConversão = ConversaoCodIntermediario($1.label, $3.tipo, labelEsq) + "\t";
+			tradConversão = ConversaoCodIntermediario($1.label, $1.tipo, $3.tipo, labelEsq) + "\t";
 			labelDir = $3.label;
 		}	
 		else
@@ -813,6 +883,90 @@ EXPRESSAO:
 		$$.tipo = tipoFinal;
 		$$.traducao = $1.traducao + $3.traducao + "\t" + tradConversão + $$.label + " = " + labelEsq + " " + operadorCodInt + " " + labelDir + ";\n";
 
+		if (tipoFinal == TIPO_STRING)
+		{			
+			StringInfo* sinfo = novaString();
+			sinfo->éDinâmica = true;
+
+			StringInfo* sinfoA = tabelaStrings[labelEsq];
+			StringInfo* sinfoB = tabelaStrings[labelDir];			
+
+			string tamanhoALabel = novaVarTemp(TIPO_INT);
+			string tamanhoBLabel = novaVarTemp(TIPO_INT);
+			string tamanhoSemiFinalLabel = novaVarTemp(TIPO_INT);
+			string tamanhoFinalLabel = novaVarTemp(TIPO_INT);
+
+			string tamanhoAtrad; 
+			string tamanhoBtrad;
+
+			string concatLabel = novaVarTemp(TIPO_STRING);
+
+			if (sinfoA->éDinâmica)
+			{
+				tamanhoAtrad = "\t" + tamanhoALabel + " = " + StringDinamicaTamanho(labelEsq) + ";\n";
+			}
+			else
+			{
+				tamanhoAtrad = "\t" + tamanhoALabel + " = " + to_string(sinfoA->tamanho) + ";\n" ;
+			}
+
+			if (sinfoB->éDinâmica)
+			{
+				tamanhoBtrad = "\t" + tamanhoBLabel + " = " + StringDinamicaTamanho(labelDir) + ";\n";
+			}
+			else
+			{
+				tamanhoBtrad = "\t" + tamanhoBLabel + " = " + to_string(sinfoB->tamanho) + ";\n" ;
+			}
+			
+
+			string somaTamanhos = novaVarTemp(TIPO_INT);
+			string somaTamanhosLess = novaVarTemp(TIPO_INT);
+
+			string alloc;
+			string finalCpy;
+			string finalLength;
+
+			StringInfo* concatsinfo = novaString();
+
+			if (sinfoA->éDinâmica == false && sinfoB->éDinâmica == false)
+			{
+				sinfo->éDinâmica = false;
+				sinfo->tamanho = sinfoA->tamanho + sinfoB->tamanho - 1;
+				alloc = "";
+				
+				concatsinfo->éDinâmica = false;
+				concatsinfo->tamanho = sinfo->tamanho;								
+
+				finalLength = "";
+			}
+			else
+			{
+				sinfo->éDinâmica = true;
+				concatsinfo->éDinâmica = true;
+
+				alloc = StringMalloc(concatLabel, somaTamanhosLess) + StringMalloc($$.label, somaTamanhosLess);
+
+				finalLength = "\t" + StringDinamicaTamanho($$.label) + " = " + somaTamanhosLess + ";\n" ;
+			}
+
+			finalCpy = 	  	"\tstrcpy(" + concatLabel + ", " + labelEsq + ");\n"
+							+ "\t" + "strcat(" + concatLabel + ", " + labelDir + ");\n"
+							+ "\t" + "strcpy(" + $$.label + ", " + concatLabel + ");\n";
+
+			tabelaStrings[$$.label] = sinfo;
+			tabelaStrings[concatLabel] = concatsinfo;
+
+			$$.traducao =   $1.traducao + $3.traducao + "\t" + tradConversão 
+							+ tamanhoAtrad
+							+ tamanhoBtrad							
+							+ "\t" + somaTamanhos + " = " + tamanhoALabel + " + " + tamanhoBLabel + ";\n"
+							+ "\t" + somaTamanhosLess + " = " + somaTamanhos + " - 1;\n"
+							+ alloc
+							+ finalCpy
+							+ finalLength
+							;
+		}
 	}
 	| EXPRESSAO '-' EXPRESSAO
 	{
@@ -834,13 +988,13 @@ EXPRESSAO:
 			// Expressão 2 pode ser convertida no tipo de Expressão 1
 			tipoFinal = $1.tipo;
 			labelEsq = $1.label;
-			tradConversão = ConversaoCodIntermediario($3.label, $1.tipo, labelDir) + "\t";
+			tradConversão = ConversaoCodIntermediario($3.label, $3.tipo, $1.tipo, labelDir) + "\t";
 		}
 		else if (podeSerConvertidoImplicitamente($1.tipo, $3.tipo) && operadorFuncionaEmTipo(operador, $3.tipo))
 		{
 			// Expressão 1 pode ser convertida no tipo de Expressão 2
 			tipoFinal = $3.tipo;
-			tradConversão = ConversaoCodIntermediario($1.label, $3.tipo, labelEsq) + "\t";
+			tradConversão = ConversaoCodIntermediario($1.label, $1.tipo, $3.tipo, labelEsq) + "\t";
 			labelDir = $3.label;
 		}	
 		else
@@ -875,13 +1029,13 @@ EXPRESSAO:
 			// Expressão 2 pode ser convertida no tipo de Expressão 1
 			tipoFinal = $1.tipo;
 			labelEsq = $1.label;
-			tradConversão = ConversaoCodIntermediario($3.label, $1.tipo, labelDir) + "\t";
+			tradConversão = ConversaoCodIntermediario($3.label, $3.tipo, $1.tipo, labelDir) + "\t";
 		}
 		else if (podeSerConvertidoImplicitamente($1.tipo, $3.tipo) && operadorFuncionaEmTipo(operador, $3.tipo))
 		{
 			// Expressão 1 pode ser convertida no tipo de Expressão 2
 			tipoFinal = $3.tipo;
-			tradConversão = ConversaoCodIntermediario($1.label, $3.tipo, labelEsq) + "\t";
+			tradConversão = ConversaoCodIntermediario($1.label, $1.tipo, $3.tipo, labelEsq) + "\t";
 			labelDir = $3.label;
 		}	
 		else
@@ -916,13 +1070,13 @@ EXPRESSAO:
 			// Expressão 2 pode ser convertida no tipo de Expressão 1
 			tipoFinal = $1.tipo;
 			labelEsq = $1.label;
-			tradConversão = ConversaoCodIntermediario($3.label, $1.tipo, labelDir) + "\t";
+			tradConversão = ConversaoCodIntermediario($3.label, $3.tipo, $1.tipo, labelDir) + "\t";
 		}
 		else if (podeSerConvertidoImplicitamente($1.tipo, $3.tipo) && operadorFuncionaEmTipo(operador, $3.tipo))
 		{
 			// Expressão 1 pode ser convertida no tipo de Expressão 2
 			tipoFinal = $3.tipo;
-			tradConversão = ConversaoCodIntermediario($1.label, $3.tipo, labelEsq) + "\t";
+			tradConversão = ConversaoCodIntermediario($1.label, $1.tipo, $3.tipo, labelEsq) + "\t";
 			labelDir = $3.label;
 		}	
 		else
@@ -1061,7 +1215,7 @@ EXPRESSAO:
 		else if (podeSerConvertidoImplicitamente($2.tipo, TIPO_BOOL))
 		{
 			// Expressão pode virar uma booleana;
-			tradConversao = ConversaoCodIntermediario($2.label, TIPO_BOOL, labelExp) + "\t";
+			tradConversao = ConversaoCodIntermediario($2.label, $2.tipo, TIPO_BOOL, labelExp) + "\t";
 		}
 		else
 		{
@@ -1117,6 +1271,12 @@ ATRIBUICAO_NAO_DECLARACATIVA:
 		string labelExp = $3.label;
 		string tradConversao = "";
 
+		if (varExiste($1.label) == false)
+		{
+			semanticError("A variável " + $1.label + " é desconhecida");
+			YYABORT;
+		}
+
 		if (!tipoPodeSerAtribuido(varTipo($1.label), $3.tipo))
 		{
 			semanticError("Erro de tipo -> A expressão de tipo '" + tipoParaString($3.tipo) + "' não é do tipo esperado (" + tipoParaString(varTipo($1.label)) + ").");
@@ -1125,15 +1285,55 @@ ATRIBUICAO_NAO_DECLARACATIVA:
 		if (varTipo($1.label) != $3.tipo)
 		{
 			// Deve ser feita uma conversão implícita, a expressão pode ser atribuída à essa variável, caso contrário a condicional de cima daria erro
-			tradConversao = ConversaoCodIntermediario($3.label, varTipo($1.label), labelExp) + "\t";
+			tradConversao = ConversaoCodIntermediario($3.label, $3.tipo, varTipo($1.label), labelExp) + "\t";
 		}
 
 		$$.label = $1.label;
 		$$.traducao = $3.traducao + "\t" + tradConversao + varNomeReal($1.label) + " = " + labelExp + ";" + " // " + $1.label + "\n";
-
 		Simbolo* s = obterSimbolo($1.label);
+
+		if (varTipo($1.label) == TIPO_STRING)
+		{
+			$$.traducao = $3.traducao + tradConversao + StringAtribuição($1.label, labelExp);
+		}		
+
 		s->simboloInicializado = true;		
 	}
+	| TK_ID '=' TK_INPUT
+	{
+		// Ler o input do tipo do TK_ID
+		// Aqui não tem como TK_INPUT virar expressão pois é necessário inferir o tipo de TK_INPUT
+
+		if (varExiste($1.label) == false)
+		{
+			semanticError("A variável " + $1.label + " é desconhecida");
+			YYABORT;
+		}
+
+		TIPO tipoExp = varTipo($1.label);		
+		$$.label = $1.label;				
+
+		if (tipoExp == TIPO_STRING)
+		{
+			string labelExp;
+			string labelExpTamanho;
+			string trad = StringDinamicaInput(labelExpTamanho, labelExp);
+			$$.traducao = trad + StringAtribuição($1.label, labelExp);
+		}
+		else if (tabelaFormatting.find(tipoExp) == tabelaFormatting.end())
+		{
+			semanticError("Não é possível ler o tipo " + tipoParaString(tipoExp) + " na entrada.");
+			YYABORT;
+		}		
+		else
+		{
+			string labelExp = novaVarTemp(tipoExp);
+			$$.traducao = "\tscanf(\"" + tabelaFormatting[tipoExp] + "\", &" + labelExp + ");\n" + "\t" + varNomeReal($1.label) + " = " + labelExp + ";" + " // " + $1.label + "\n";
+		}		
+		
+		Simbolo* s = obterSimbolo($1.label);
+		s->simboloInicializado = true; 		
+	}	
 ;
 
 ATRIBUICAO_DECLARACATIVA:		
@@ -1152,13 +1352,28 @@ ATRIBUICAO_DECLARACATIVA:
 		if (varTipo($1.label) != $3.tipo)
 		{
 			// Deve ser feita uma conversão implícita, a expressão pode ser atribuída à essa variável, caso contrário a condicional de cima daria erro
-			tradConversao = ConversaoCodIntermediario($3.label, varTipo($1.label), labelExp) + "\t";
+			tradConversao = ConversaoCodIntermediario($3.label, $3.tipo, varTipo($1.label), labelExp) + "\t";
 		}
 
 		$$.label = $1.label;
 		$$.traducao = $3.traducao + "\t" + tradConversao + varNomeReal($1.label) + " = " + labelExp + ";" + " // " + $1.label + "\n";
 
 		Simbolo* s = obterSimbolo($1.label);
+
+		if ($1.tipo == TIPO_STRING)
+		{
+			StringInfo* sinfoVar = tabelaStrings[s->labelReal];
+			StringInfo* sinfoExp = tabelaStrings[labelExp];
+			
+			if (sinfoExp->éDinâmica == false)
+			{
+				sinfoVar->éDinâmica = false;
+				sinfoVar->tamanho = sinfoExp->tamanho;
+			}
+
+			$$.traducao = $3.traducao + tradConversao + StringAtribuição($1.label, labelExp);
+		}
+
 		s->simboloInicializado = true;
 	}
 	| DECLARACAO '=' TK_INPUT
@@ -1166,17 +1381,26 @@ ATRIBUICAO_DECLARACATIVA:
 		// Ler o input do tipo da Declaração
 		// Aqui não tem como TK_INPUT virar expressão pois é necessário inferir o tipo de TK_INPUT
 
-		TIPO tipoExp = varTipo($1.label);
-		string labelExp = novaVarTemp(tipoExp);
+		TIPO tipoExp = varTipo($1.label);		
+		$$.label = $1.label;
 
-		if (tabelaFormatting.find(tipoExp) == tabelaFormatting.end())
+		if (tipoExp == TIPO_STRING)
+		{
+			string labelExp;
+			string labelExpTamanho;
+			string trad = StringDinamicaInput(labelExpTamanho, labelExp);
+			$$.traducao = trad + StringAtribuição($$.label, labelExp);
+		}
+		else if (tabelaFormatting.find(tipoExp) == tabelaFormatting.end())
 		{
 			semanticError("Não é possível ler o tipo " + tipoParaString(tipoExp) + " na entrada.");
 			YYABORT;
 		}
-
-		$$.label = $1.label;
-		$$.traducao = "\tscanf(\"" + tabelaFormatting[tipoExp] + "\", &" + labelExp + ");\n" + "\t" + varNomeReal($1.label) + " = " + labelExp + ";" + " // " + $1.label + "\n";
+		else 
+		{
+			string labelExp = novaVarTemp(tipoExp);
+			$$.traducao = "\tscanf(\"" + tabelaFormatting[tipoExp] + "\", &" + labelExp + ");\n" + "\t" + varNomeReal($1.label) + " = " + labelExp + ";" + " // " + $1.label + "\n";
+		}				
 
 		Simbolo* s = obterSimbolo($1.label);
 		s->simboloInicializado = true; 
@@ -1201,6 +1425,22 @@ ATRIBUICAO_DECLARACATIVA:
 			ordemDeclaracaoSimbolos.push(s);
 			
 			$$.traducao = $4.traducao + "\t" + varNomeReal($2.label) + " = " + $4.label + ";" + " // " + $2.label + "\n";
+
+			if ($4.tipo == TIPO_STRING)
+			{
+				StringInfo* sinfo = tabelaStrings[$4.label];
+				StringInfo* sinfoVar = novaString();
+
+				sinfoVar->éDinâmica = sinfo->éDinâmica;				
+
+				if (!sinfo->éDinâmica)
+				{
+					sinfoVar->tamanho = sinfo->tamanho;
+				}			
+
+				tabelaStrings[s->labelReal] = sinfoVar;
+				$$.traducao = $4.traducao + StringAtribuição($2.label, $4.label);				
+			}
 		}
 	}
 ;
@@ -1222,6 +1462,13 @@ DECLARACAO:
 
 			tabelaSimbolos.back()[$2.label] = s;
 			ordemDeclaracaoSimbolos.push(s);
+			
+			if ($1.tipo == TIPO_STRING)
+			{
+				StringInfo* sinfo = novaString();
+				sinfo->éDinâmica = true;				
+				tabelaStrings[s->labelReal] = sinfo;				
+			}
 		}
 	}
 ;
@@ -1257,6 +1504,15 @@ Simbolo* novaVar(TIPO tipo, string labelUsuario)
 	return s;
 }
 
+// Apenas um helper para criar uma StringInfo
+StringInfo* novaString()
+{
+	StringInfo* s = new StringInfo;
+	s->éDinâmica = false;
+	s->transicionou = false;
+	s->tamanho = 0;
+	return s;
+}
 
 void empilharEscopo()
 {
@@ -1390,6 +1646,27 @@ string tipoCodIntermediario(TIPO tipo)
 	return "";
 }
 
+// Retorna, dado um tipo, se consegue ser transformado facilmente em código intermediário, apenas trocando o tipo
+bool tipoDiretoCodIntermediario(TIPO tipo)
+{
+	switch (tipo)
+	{
+		case TIPO_INT:
+			return true;
+			break;
+		case TIPO_BOOL:
+			return true;
+			break;
+		case TIPO_FLOAT:
+			return true;
+			break;
+		case TIPO_CHAR:
+			return true;
+			break;
+	}
+	return false;
+}
+
 // Retorna, dado um tipo, qual é a string correspondente do nome daquele tipo.
 // OBS: É diferente do tipo usado para representar esse tipo no código intermediário
 // OBS²: Não verifica se o tipo passado é válido
@@ -1408,6 +1685,9 @@ string tipoParaString(TIPO tipo)
 			break;
 		case TIPO_CHAR:
 			return "char";
+			break;
+		case TIPO_STRING:
+			return "string";
 			break;
 	}
 	return "unknown";
@@ -1476,6 +1756,9 @@ void inicializarTabelaConversao()
 	// CONVERSÕES DE BOOL
 
 	// CONVERSÕES DE CHAR
+	tipoAtual = {TIPO_CHAR, TIPO_STRING};
+	conversaoInfoAtual.tipo = TipoDeConversao::Implicita;
+	tabelaConversao[tipoAtual] = conversaoInfoAtual;
 }
 
 void inicializarTabelaDeOperadores()
@@ -1515,6 +1798,8 @@ void inicializarTabelaDeOperadores()
 	tabelaDeOperadoresAdd(OP_IGUAL, TIPO_CHAR);
 	tabelaDeOperadoresAdd(OP_DIFERENTE, TIPO_CHAR);
 
+	// STRING
+	tabelaDeOperadoresAdd('+', TIPO_STRING);
 }
 
 void inicializarTabelaFormatting()
@@ -1522,6 +1807,7 @@ void inicializarTabelaFormatting()
 	tabelaFormattingAdd(TIPO_INT, "%d");
 	tabelaFormattingAdd(TIPO_FLOAT, "%f");
 	tabelaFormattingAdd(TIPO_CHAR, "%c");
+	tabelaFormattingAdd(TIPO_STRING, "%s");
 }
 
 void tabelaFormattingAdd(TIPO tipo, string cFormato)
@@ -1588,13 +1874,13 @@ int conversaoImpicitaOperadorBinario(YYSTYPE exp1, YYSTYPE exp2, int operador, s
 	else if (operadorFuncionaEmTipo(operador, exp1.tipo) && podeSerConvertidoImplicitamente(exp2.tipo, exp1.tipo))
 	{
 		// Expressão 2 pode ser convertida no tipo de Expressão 1				
-		tradConversao = ConversaoCodIntermediario(exp2.label, exp1.tipo, labelConvertido);
+		tradConversao = ConversaoCodIntermediario(exp2.label, exp2.tipo, exp1.tipo, labelConvertido);
 		return 1;
 	}
 	else if (podeSerConvertidoImplicitamente(exp1.tipo, exp2.tipo) && operadorFuncionaEmTipo(operador, exp2.tipo))
 	{
 		// Expressão 1 pode ser convertida no tipo de Expressão 2		
-		tradConversao = ConversaoCodIntermediario(exp1.label, exp2.tipo, labelConvertido);
+		tradConversao = ConversaoCodIntermediario(exp1.label, exp1.tipo, exp2.tipo, labelConvertido);
 		return 2;
 	}	
 	else
@@ -1645,16 +1931,372 @@ bool operadorRelacionalDireto(YYSTYPE exp1, YYSTYPE exp2, int operador, string o
 	return true;
 }
 
-// Realiza uma conversão simples no código intermediário (por meio de cast no C) com label 'labelA' para uma do tipo 'B',
+// Realiza a conversão de uma variável de labelA com tipoA para o tipoB, guardando o resultado em labelB
+// Para tipos nativos, realiza uma conversão simples no código intermediário (por meio de cast no C) com label 'labelA' para uma do tipo 'B',
 // retornando o código intermediário dessa conversão e o label da variável temporário que guarda a variável convertida 'labelB'
-// OBS: Não verifica se a conversão pode ou não ser feita, apenas faz um casting no código intermediário; Para verificar, use 
+// Para tipos complexos, realiza uma série de procedimentos
+// OBS: Na maioria dos casos, não verifica se a conversão pode ou não ser feita, apenas faz um casting no código intermediário; Para verificar, use 
 // podeSerConvertidoExplicitamente ou podeSerConvertidoImplicitamente
-string ConversaoCodIntermediario(string labelA, TIPO tipoB, string& labelB)
+string ConversaoCodIntermediario(string labelA, TIPO tipoA, TIPO tipoB, string& labelB)
 {
 	string s; 
 	labelB = novaVarTemp(tipoB);
-	s = labelB + " = " + "(" + tipoCodIntermediario(tipoB) + ")" + " " + labelA + ";\n";
+
+	if (tipoA == TIPO_CHAR && tipoB == TIPO_STRING)
+	{
+		StringInfo* sinfo = novaString();
+		sinfo->éDinâmica = true;
+		tabelaStrings[labelB] = sinfo;
+
+		string malloc = StringMalloc(labelB, to_string(2)); // char e \0
+		s = malloc 
+			+ "\t" + labelB + "[" + to_string(0) + "] = " + labelA + ";\n" 
+			+ "\t" + labelB + "[" + to_string(1) + "] = \'\\0\';\n"
+			+ "\t" + StringDinamicaTamanho(labelB) + " = 2;\n" 
+			; 
+	}
+	else
+	{
+		s = labelB + " = " + "(" + tipoCodIntermediario(tipoB) + ")" + " " + labelA + ";\n";
+	}	
+
 	return s;
+}
+
+// Retorna um código intermediário inline para ler uma string dinâmica enviada pelo usuário, salvando ela em uma variável (labelString) e salvando um label para o seu tamanho
+// Recebe como entrada uma referência de uma string tamanho, que se transformará no label da variável com o tamanho final da string
+// Recebe por referência também a string com a label da string dinâmica que receberá 
+string StringDinamicaInput(string& tamanho, string& labelString)
+{
+	usandoInputBuffer = true; // Marca o input buffer como usado
+	// OBS: O buffer não é preciso alocar pois ele já é alocado no final, caso usandoInputBuffer = true
+
+	tamanho = novaVarTemp(TIPO_INT); // O label da var temp que guarda o tamanho total da string 
+	string indexLabel = novaVarTemp(TIPO_INT); // O label da var temp que guarda qual o índice do buffer que está sendo lido no momento
+	string bufferLabel = string(str_inputBuffer_label); // O label do buffer para a entrada de strings
+	string charSizeLabel = novaVarTemp(TIPO_INT); // O label da variável que carregará sizeof(char)
+	string charLidoLabel = novaVarTemp(TIPO_CHAR); // O label da var temp que guarda qual caractere foi lido da entrada
+	string bufferTamanho = novaVarTemp(TIPO_INT); // O tamanho real do buffer para chars (-2 pois começa em 0 e \0 tem que aparecer no final do buffer pro código funcionar)
+
+	string stringAtual = novaVarTemp(TIPO_STRING); // (O label da) A string que está sendo "construída" atualmente
+
+	StringInfo* stringAtualInfo = novaString();
+	stringAtualInfo->éDinâmica = true;
+	tabelaStrings[stringAtual] = stringAtualInfo;
+
+	string stringTemp = novaVarTemp(TIPO_STRING); // (O label de) Uma string temporária usada na concatenação das strings
+
+	StringInfo* stringTempInfo = novaString();
+	stringTempInfo->éDinâmica = true;
+	tabelaStrings[stringTemp] = stringTempInfo;
+
+	labelString = novaVarTemp(TIPO_STRING); // (O label da) A string temporária final com a string lida pelo usuário
+
+	StringInfo* stringFinalInfo = novaString();
+	stringFinalInfo->éDinâmica = true;
+	tabelaStrings[labelString] = stringFinalInfo;
+
+	int labelWhileIndex = label_qnt; label_qnt++; // Um identificador único para os labels do while
+	int labelIfIndex = label_qnt; label_qnt++;	// Um identificador único para os labels do if
+
+	string whileExpLabel = novaVarTemp(TIPO_BOOL);
+	string ifExpLabel = novaVarTemp(TIPO_BOOL);
+	string ifExpNotLabel = novaVarTemp(TIPO_BOOL);
+
+	string indexPlusLabel = novaVarTemp(TIPO_INT); 
+
+	string tamanhoPlus = novaVarTemp(TIPO_INT);
+	string stringTmpTamanho = novaVarTemp(TIPO_INT);
+
+	string trad;
+
+	trad = 	"\t"   + charSizeLabel + " = sizeof(char);\n" 
+			+ "\t" + bufferTamanho + " = " + to_string(str_inputBuffer_len) + " - 2;\n"
+			+ "\t" + stringAtual + " = (char*) malloc(" + charSizeLabel + ");\n"
+			+ "\t" + tamanho + " = 0;\n"
+			+ "\t" + indexLabel + " = 0;\n"
+			+ "\t" + "strcpy(" + stringAtual + ", \"\");\n"
+			+ "\t" + "scanf(\"%c\", &" + charLidoLabel + ");\n"
+				   + "strscanner_ini_" + to_string(labelWhileIndex) + ":\n"  
+			+ "\t" + whileExpLabel + " = " + charLidoLabel + " == \'\\n\';\n"
+			+ "\t" + "if (" + whileExpLabel + ")\n" + 
+			+ "\t" + "\t" + "goto strscanner_fim_" + to_string(labelWhileIndex) + ";\n"
+			+ "\t" + tamanho + " = " + tamanho + " + 1;\n"
+			+ "\t" + bufferLabel + "[" + indexLabel + "] = " + charLidoLabel + ";\n" 
+			+ "\t" + ifExpLabel + " = " + indexLabel + " == " + bufferTamanho + ";\n"
+			+ "\t" + ifExpNotLabel + " = !" + ifExpLabel + ";\n"
+			+ "\t" + "if (" + ifExpNotLabel + ")\n" +
+			+ "\t" + "\t" + "goto strscanner_if_fim_" + to_string(labelIfIndex) + ";\n"
+			+ "\t" + indexPlusLabel + " = " + indexLabel + " + 1;\n"
+			+ "\t" + bufferLabel + "[" + indexPlusLabel + "] = \'\\0\';\n"
+			+ "\t" + tamanhoPlus + " = " + tamanho + " + 1;\n"
+			+ "\t" + stringTmpTamanho + " = " + tamanhoPlus + " * " + charSizeLabel + ";\n"
+			+ "\t" + stringTemp + " = (char*) malloc(" +  stringTmpTamanho + ");\n"
+			+ "\t" + "strcpy(" + stringTemp + ", " + stringAtual + ");\n"
+			+ "\t" + "strcat(" + stringTemp + ", " + bufferLabel + ");\n"
+			+ "\t" + "free(" + stringAtual + ");\n"
+			+ "\t" + stringAtual + " = (char*) malloc(" + stringTmpTamanho + ");\n"
+			+ "\t" + "strcpy(" + stringAtual + ", " + stringTemp + ");\n"
+			+ "\t" + "free(" + stringTemp + ");\n"
+			+ "\t" + indexLabel + " = -1;\n"			
+				   + "strscanner_if_fim_" + to_string(labelIfIndex) + ":\n"
+			+ "\t" + indexLabel + " = " + indexLabel + " + 1;\n"
+			+ "\t" + "scanf(\"%c\", &" + charLidoLabel + ");\n"
+			+ "\t" + "goto strscanner_ini_" + to_string(labelWhileIndex) + ";\n"
+			       + "strscanner_fim_" + to_string(labelWhileIndex) + ":\n"  
+			+ "\t" + tamanhoPlus + " = " + tamanho + " + 1;\n"
+			+ "\t" + bufferLabel + "[" + indexLabel + "] = \'\\0\';\n" 
+			+ "\t" + stringTmpTamanho + " = " + tamanhoPlus + " * " + charSizeLabel + ";\n"
+			+ "\t" + stringTemp + " = (char*) malloc(" +  stringTmpTamanho + ");\n"
+			+ "\t" + "strcpy(" + stringTemp + ", " + stringAtual + ");\n"
+			+ "\t" + "strcat(" + stringTemp + ", " + bufferLabel + ");\n"
+			+ "\t" + "free(" + stringAtual + ");\n"
+			+ "\t" + stringAtual + " = (char*) malloc(" + stringTmpTamanho + ");\n"
+			+ "\t" + "strcpy(" + stringAtual + ", " + stringTemp + ");\n"
+			+ "\t" + "free(" + stringTemp + ");\n"
+			+ "\t" + labelString + " = (char*) malloc(" + stringTmpTamanho + ");\n"
+			+ "\t" + "strcpy(" + labelString + ", " + stringAtual + ");\n"
+			+ "\t" + StringDinamicaTamanho(labelString) + " = " + tamanhoPlus + ";\n"
+			+ "\t" + tamanho + " = " + tamanhoPlus + ";\n";
+	
+	// while V
+		// Fazer a EXP do if V
+		// Fazer o IF V
+			// Colocar o \0 no buffer V
+			// Fazer a concatenação do buffer na string atual V
+			// Zerar o índice V
+		// Colocar o label de fim do IF V
+		// Aumentar o índice V
+		// Scanear o lido V
+	// fim do while V
+	// Fazer a concatenação final do buffer V
+	// Criar uma nova string temporária dinâmica V
+	// Copiar o lido nessa string temporária dinâmica V
+	// Salvar o tamanho dessa string temporária dinâmica (tamanhoPlus -> mesmo tamanho da string final) V
+
+	return trad;
+}
+
+// Retorna o código intermediário usado para alocar uma string dinâmica em labelString 
+// Recebe uma labelString que será a label que receberá a string alocada e
+// Recebe labelComQntCharOuConstante, que é uma string de um int constante (ex.: to_string(5)) ou uma label que contém a quantia de caracteres (\0 deve estar incluído) que será alocada
+string StringMalloc(string labelString, string labelComQntCharOuConstante)
+{	
+	string tmpA = novaVarTemp(TIPO_INT); // O tamanho da string 				
+	string tmpB = novaVarTemp(TIPO_INT); // sizeof(char)
+	string tmpC = novaVarTemp(TIPO_INT); // tamanho * sizeof(char)
+	string malloc = "\t" + tmpA + " = " + labelComQntCharOuConstante + ";\n\t" + tmpB + " = sizeof(char);\n\t" + tmpC + " = " + tmpA + " * " + tmpB + ";\n\t" + labelString + " = (char*) malloc(" + tmpC + ");\n";
+	return malloc;
+}
+
+// Retorna a label da variável que guarda 
+string StringDinamicaTamanho(string labelString)
+{
+	return labelString + str_length_suffix;
+}
+
+// Serve para atribuir uma string à outra, mesmo que elas não sejam do mesmo tipo (Dinâmica ou estática);
+// lString -> label de usuário string da esquerda
+// rString -> label real da string da direita
+// Retorna a tradução para a atribuiçao de lString = rString
+string StringAtribuição(string lString, string rString)
+{
+	string retorno = "";
+
+	string lString_labelReal = varNomeReal(lString); // O label real do ID que será atribuido um valor
+	string labelExp = rString; // O label real da expressão que será atribuida no ID
+
+	StringInfo* sinfoVar = tabelaStrings[lString_labelReal];						
+	StringInfo* sinfoExp = tabelaStrings[labelExp];			
+
+	Simbolo* s = obterSimbolo(lString); // O Símbolo 
+
+	if (sinfoExp->éDinâmica)
+	{
+		if (sinfoVar->éDinâmica)
+		{
+			// STRING LEFT DINAMICA, STRING RIGHT DINAMICA
+			string free = "";
+			if (s->simboloInicializado)
+			{
+				free = "\tfree(" + s->labelReal + ");\n";
+			}
+
+			// Calcular tamanho da string dinâmica exp (labelExp) e colocar em tmpTamanhoExp				
+			string tamanhoLabel = novaVarTemp(TIPO_INT);
+			string tamanhoTrad = "\t" + tamanhoLabel + " = " + StringDinamicaTamanho(labelExp) + ";\n";
+			// calcula o tamanho que deve ser alocado, usando o tamanho * sizeof(char)
+			// alocar essa quantia
+			string malloc = StringMalloc(s->labelReal, tamanhoLabel);
+			// atualiza a tradução final
+			retorno = 	free + tamanhoTrad + malloc 
+						+ "\tstrcpy(" + s->labelReal + ", " + labelExp + ")" + ";" + " // " + lString + "\n\t" 
+						+ StringDinamicaTamanho(s->labelReal) + " = " + tamanhoLabel + ";\n"; // altera a variável que guarda o tamanho dessa string (LEFT)
+		}
+		else
+		{
+			// STRING LEFT ESTATICA, STRING RIGHT DINAMICA
+
+			// Calcular tamanho da string right dinâmica 
+			string tamanhoLabel = novaVarTemp(TIPO_INT);
+			string tamanhoTrad = "\t" + tamanhoLabel + " = " + StringDinamicaTamanho(labelExp) + ";\n";
+
+			// dar free 
+			string free = "\tfree(" + s->labelReal + ");\n";
+
+			// calcular o tamanho que deve ser alocado, usando o tamanho * sizeof(char)					
+			// alocar nova string
+			string malloc = StringMalloc(s->labelReal, tamanhoLabel);
+
+			// transformar a string estática TK_ID em uma dinâmica na tabela de strings
+			sinfoVar->éDinâmica = true;
+			// registrar que ocorreu essa transição e guardar o maior tamamnho estático dela
+			// OBS: O maior tamanho de string estática fica salvo em sinfoVar->tamanho
+			sinfoVar->transicionou = true; 					
+											
+			// traducao final
+			retorno = 	free + tamanhoTrad + malloc 
+						+ "\tstrcpy(" + s->labelReal + ", " + labelExp + "); // " + lString + "\n\t"
+						+ StringDinamicaTamanho(s->labelReal) + " = " + tamanhoLabel + ";\n"; // altera a variável que guarda o tamanho dessa string (LEFT)
+		}
+	}
+	else
+	{
+		if (sinfoVar->éDinâmica)
+		{
+			// STRING LEFT DINAMICA, STRING RIGHT ESTATICA
+			string free = "";
+			if (s->simboloInicializado)
+			{
+				free = "\tfree(" + s->labelReal + ");\n";
+			}
+
+			string malloc = StringMalloc(s->labelReal, to_string(sinfoExp->tamanho));
+			retorno =   free + malloc 
+						+ "\tstrcpy(" + s->labelReal + ", " + labelExp +")" + ";" + " // " + lString + "\n\t" 
+						+ StringDinamicaTamanho(s->labelReal) + " = " + to_string(sinfoExp->tamanho) + ";\n";	
+		}
+		else
+		{
+			// STRING LEFT ESTATICA, STRING RIGHT ESTATICA
+			int tamanho = 0; 
+
+			// Determina o tamanho da string da esquerda (ID) baseado em qual string pode suportar mais chars
+			if (sinfoVar->tamanho > sinfoExp->tamanho)
+			{
+				tamanho = sinfoVar->tamanho;
+			}
+			else
+			{
+				tamanho = sinfoExp->tamanho;
+			}
+
+			sinfoVar->tamanho = tamanho; 
+			retorno = "\tstrcpy(" + s->labelReal + ", " + labelExp +")" + ";" + " // " + lString + "\n";					
+		}
+	}
+
+	return retorno;
+}
+
+string DeclararVariaveisTemporarias(bool* b, TIPO* tipoErrado)
+{
+	string varTemp = "\t// Variaveis Temporarias\n";
+
+	int i = 0;
+	while (!tipoDosTemporarios.empty())
+	{			 
+		TIPO tipoVar = tipoDosTemporarios.front();			
+		
+		if (tipoDiretoCodIntermediario(tipoVar))
+		{
+			varTemp += "\t" + tipoCodIntermediario(tipoVar) + " " + tmpVarPrefix + to_string(i) + ";" + " // " + tipoParaString(tipoVar) + "\n";			
+		}
+		else if (tipoVar == TIPO_STRING)
+		{				
+			StringInfo* sinfo = tabelaStrings[tmpVarPrefix + to_string(i)];
+
+			if (sinfo->éDinâmica)
+			{
+				// Usar char*
+				varTemp += string("\tchar* ") + tmpVarPrefix + to_string(i) + ";" + " // " + tipoParaString(tipoVar) + "\n";			
+				varTemp += string("\tint ") + tmpVarPrefix + to_string(i) + str_length_suffix + ";\n";
+
+				// OBS: AS variáveis string temporárias podem se transicionar?
+				if (sinfo->transicionou)
+				{						
+					varTemp += StringMalloc(tmpVarPrefix + to_string(i), to_string(sinfo->tamanho));
+				}
+			}
+			else
+			{
+				// Usar char[]
+				varTemp += string("\tchar ") + tmpVarPrefix + to_string(i) + "[" + to_string(sinfo->tamanho) + "]" + ";" + " // " + tipoParaString(tipoVar) + "\n";	
+			}
+		}			
+		else
+		{
+			*b = true;
+			*tipoErrado = tipoVar;
+			return varTemp;
+		}
+
+		tipoDosTemporarios.pop();
+		i++;
+	}	
+
+	if (usandoInputBuffer)
+		varTemp += "\tchar " str_inputBuffer_label "[" + to_string(str_inputBuffer_len) + "];\n";
+
+	return varTemp;					
+}
+
+string DeclararVariaveisUsuario(bool* b, TIPO* tipoErrado)
+{
+	string codigo_gerado = "\n\t// Variaveis De Usuario\n";		
+
+	while (!ordemDeclaracaoSimbolos.empty())
+	{			 
+		Simbolo* s = ordemDeclaracaoSimbolos.front();
+		TIPO tipoVar = s->tipoDeclarado;
+		
+		if (tipoDiretoCodIntermediario(tipoVar))
+		{
+			codigo_gerado += "\t" + tipoCodIntermediario(s->tipoDeclarado) + " " + s->labelReal + ";" + " // " + tipoParaString(s->tipoDeclarado) + " " + s->labelUsuario + "\n";
+		}			
+		else if (tipoVar == TIPO_STRING)
+		{
+			StringInfo* sinfo = tabelaStrings[s->labelReal];
+
+			if (sinfo->éDinâmica)
+			{
+				// Usar char*
+				codigo_gerado += string("\tchar* ") + s->labelReal + ";" + " // " + tipoParaString(s->tipoDeclarado) + " " + s->labelUsuario + "\n";		
+				codigo_gerado += "\tint " + s->labelReal + str_length_suffix + ";\n";
+
+				if (sinfo->transicionou)
+				{						
+					codigo_gerado += StringMalloc(s->labelReal, to_string(sinfo->tamanho));										
+				}
+			}
+			else
+			{
+				// Usar char[]
+				codigo_gerado += string("\tchar ") + s->labelReal + "[" + to_string(sinfo->tamanho) + "]" + ";" + " // " + tipoParaString(s->tipoDeclarado) + " " + s->labelUsuario + "\n";	
+			}
+		}
+		else
+		{
+			*b = true;
+			*tipoErrado = tipoVar;
+			return codigo_gerado;
+		}
+
+		ordemDeclaracaoSimbolos.pop();
+	}
+	codigo_gerado += "\n";		
+
+	return codigo_gerado;
 }
 
 // Usado para inicializar as estruturas e controladores usados no compilador;
@@ -1662,6 +2304,7 @@ void initialize()
 {
 	var_temp_qnt = 0;
 	var_qnt = 0;
+	usandoInputBuffer = false;
 
 	inicializarTabelaConversao();
 	inicializarTabelaDeOperadores();
