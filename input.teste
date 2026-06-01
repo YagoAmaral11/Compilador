@@ -1,24 +1,2 @@
-int a = 10;
-float b = 2.0;
-
-switch(a)
-{
-    case 10:
-        switch(b)
-        {
-            case 10:
-                output a;
-                break;
-            case 2.0:
-                output b;
-                break;
-            default:
-                output "Erro!";
-        }
-        break;
-    case 2.0:
-        output a;
-        break;
-    default:
-        output "Erro!";
-}
+var s = input(string);
+output s;
