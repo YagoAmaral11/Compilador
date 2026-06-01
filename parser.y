@@ -561,7 +561,7 @@ SWITCH:
 
 		string traducaoIF = "";
 
-		for(int i = 0; i < label_qnt_casos; i++)
+		while(!tabelaCasos.empty())
 		{
 			Caso* caso = desempilharCaso();
 
@@ -571,17 +571,35 @@ SWITCH:
 				continue;
 			}
 
-			if(caso->tipoValor != $1.tipo) 
+			int operador = OP_IGUAL;
+			string labelExp = novaVarTemp(TIPO_BOOL);
+			string labelSwitchValor;
+			string labelCasoValor = novaVarTemp(caso->tipoValor);
+
+			if(caso->tipoValor == $1.tipo && operadorFuncionaEmTipo(operador, $1.tipo))
+			{
+				labelSwitchValor = $1.label;
+				traducaoIF += "\t" + labelCasoValor + " = " + caso->valorCaso + ";\n";
+			}
+			else if(podeSerConvertidoImplicitamente(caso->tipoValor, $1.tipo) && operadorFuncionaEmTipo(operador, $1.tipo))
+			{
+				string labelConvertido = labelCasoValor;
+				labelSwitchValor = $1.label;
+				traducaoIF += "\t" + labelCasoValor + " = " + caso->valorCaso + ";\n";
+				traducaoIF += "\t" + ConversaoCodIntermediario(labelConvertido, caso->tipoValor, $1.tipo, labelCasoValor);
+			}
+			else if(podeSerConvertidoImplicitamente($1.tipo, caso->tipoValor) && operadorFuncionaEmTipo(operador, caso->tipoValor))
+			{
+				traducaoIF += "\t" + ConversaoCodIntermediario($1.label, $1.tipo, caso->tipoValor, labelSwitchValor);
+				traducaoIF += "\t" + labelCasoValor + " = " + caso->valorCaso + ";\n";
+			}
+			else
 			{ 
 				semanticError("Comparação invalida -> Tipo diferente entre a expressão do switch e o valor do caso. Tipo da expressão: '" + tipoParaString($1.tipo) + "'; Tipo do caso: '" + tipoParaString(caso->tipoValor) + "'.");
 				YYABORT;
 			}
 
-			string labelExp = novaVarTemp(TIPO_BOOL);
-			string labelCasoValor = novaVarTemp(caso->tipoValor);
-
-			traducaoIF += "\t" + labelCasoValor + " = " + caso->valorCaso + ";\n" + "\t" + labelExp + " = " + $1.label + " == " + labelCasoValor + ";\n" + "\tif (" + labelExp + ")\n\t\tgoto " + caso->labelCaso + ";\n";
-
+		traducaoIF += "\t" + labelExp + " = " + labelSwitchValor + " == " + labelCasoValor + ";\n" + "\tif (" + labelExp + ")\n\t\tgoto " + caso->labelCaso + ";\n";
 		}
 
 		$$.traducao = $1.traducao + traducaoIF + $3.traducao + $4.traducao + L->labelFim + ":\n";
