@@ -27,8 +27,8 @@ NOT (!|not)
 %%
 
 
-"\n"		{ linha++; coluna = 0; }
-{DELIM} 	{ coluna += strlen(yytext); }
+"\n"	   { linha++; coluna = 0; }
+{DELIM}    { coluna += strlen(yytext); }
 "if"       { coluna += strlen(yytext); return TK_IF; }
 "else"     { coluna += strlen(yytext); return TK_ELSE; }
 "while"    { coluna += strlen(yytext); return TK_WHILE; }
@@ -40,18 +40,21 @@ NOT (!|not)
 "break"    { coluna += strlen(yytext); return TK_BREAK; }
 "continue" { coluna += strlen(yytext); return TK_CONTINUE; }
 "escape"   { coluna += strlen(yytext); return TK_ESCAPE; }
-{AND}        { coluna += 2; return OP_AND; }
-{OR}        { coluna += 2; return OP_OR; }
-{NOT}         { coluna += 1; return OP_NOT; }
-"=="         { coluna += 2; return OP_IGUAL; }
-"!="     { coluna += 2; return OP_DIFERENTE; }
-"<="   { coluna += 2; return OP_MENOR_IGUAL; }
-">="   { coluna += 2; return OP_MAIOR_IGUAL; }
-"<"         { coluna ++; return OP_MENOR; }
-">"         { coluna ++; return OP_MAIOR; }
-"++"        { coluna += 2; return OP_INC; }
-"--"        { coluna += 2; return OP_DEC; }
-
+{AND}      { coluna += 2; return OP_AND; }
+{OR}       { coluna += 2; return OP_OR; }
+{NOT}      { coluna += 1; return OP_NOT; }
+"=="       { coluna += 2; return OP_IGUAL; }
+"!="       { coluna += 2; return OP_DIFERENTE; }
+"<="       { coluna += 2; return OP_MENOR_IGUAL; }
+">="       { coluna += 2; return OP_MAIOR_IGUAL; }
+"<"        { coluna ++; return OP_MENOR; }
+">"        { coluna ++; return OP_MAIOR; }
+"++"       { coluna += 2; return OP_INC; }
+"--"       { coluna += 2; return OP_DEC; }
+"+="       { coluna += 2; return OP_MAIS_IGUAL; }
+"-="       { coluna += 2; return OP_MENOS_IGUAL; }
+"*="       { coluna += 2; return OP_MULT_IGUAL; }
+"/="       { coluna += 2; return OP_DIV_IGUAL; }
 
 
 [=]         { coluna++; return *yytext; }
