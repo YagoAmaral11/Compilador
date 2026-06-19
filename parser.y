@@ -238,8 +238,11 @@ unordered_map<string, StringInfo*> tabelaStrings;
 
 %left '+' '-'
 %left '*' '/'
-%left OP_NOT
-%left '(' ')'
+
+%right OP_NOT OP_INC OP_DEC NUM_NEGATIVO
+
+
+
 
 %%
 
@@ -803,6 +806,66 @@ EXPRESSAO:
 		}
 
 	}
+	| OP_INC TK_ID
+	{
+		// PRÉ-INCREMENTO: ++x 
+		if (!varExiste($2.label)) { semanticError("Símbolo não conhecido."); YYABORT; }
+		if (!varInicializada($2.label)) { semanticError("Variável não inicializada."); YYABORT; }
+
+		TIPO tipoId = varTipo($2.label);
+		string nomeReal = varNomeReal($2.label);
+
+		$$.label = novaVarTemp(tipoId);
+		$$.tipo = tipoId;
+		// LOGICA PRÉ: Soma primeiro, salva no temporário depois
+		$$.traducao = "\t" + nomeReal + " = " + nomeReal + " + 1;\n" 
+                    + "\t" + $$.label + " = " + nomeReal + ";\n";
+	}
+	| TK_ID OP_INC
+	{
+		// PÓS-INCREMENTO: x++ 
+		if (!varExiste($1.label)) { semanticError("Símbolo não conhecido."); YYABORT; }
+		if (!varInicializada($1.label)) { semanticError("Variável não inicializada."); YYABORT; }
+
+		TIPO tipoId = varTipo($1.label);
+		string nomeReal = varNomeReal($1.label);
+
+		$$.label = novaVarTemp(tipoId);
+		$$.tipo = tipoId;
+		// LOGICA PÓS: Salva no temporário primeiro, soma depois
+		$$.traducao = "\t" + $$.label + " = " + nomeReal + ";\n" 
+                    + "\t" + nomeReal + " = " + nomeReal + " + 1;\n";
+	}
+	| OP_DEC TK_ID 
+	{
+		// PRÉ-DECREMENTO: --x 
+		if (!varExiste($2.label)) { semanticError("Símbolo não conhecido."); YYABORT; }
+		if (!varInicializada($2.label)) { semanticError("Variável não inicializada."); YYABORT; }
+
+		TIPO tipoId = varTipo($2.label);
+		string nomeReal = varNomeReal($2.label);
+
+		$$.label = novaVarTemp(tipoId);
+		$$.tipo = tipoId;
+		// LOGICA PRÉ: Subtrai primeiro, salva no temporário depois
+		$$.traducao = "\t" + nomeReal + " = " + nomeReal + " - 1;\n" 
+                    + "\t" + $$.label + " = " + nomeReal + ";\n";
+	}
+	| TK_ID OP_DEC
+	{
+		// PÓS-DECREMENTO: x-- 
+		if (!varExiste($1.label)) { semanticError("Símbolo não conhecido."); YYABORT; }
+		if (!varInicializada($1.label)) { semanticError("Variável não inicializada."); YYABORT; }
+
+		TIPO tipoId = varTipo($1.label);
+		string nomeReal = varNomeReal($1.label);
+
+		$$.label = novaVarTemp(tipoId);
+		$$.tipo = tipoId;
+		// LOGICA PÓS: Salva no temporário primeiro, subtrai depois
+		$$.traducao = "\t" + $$.label + " = " + nomeReal + ";\n" 
+                    + "\t" + nomeReal + " = " + nomeReal + " - 1;\n";
+	}
 	| TK_INPUT '(' TK_TIPO ')'
 	{
 		// Retorna uma variável do tipo TK_TIPO lida;
@@ -1272,6 +1335,17 @@ EXPRESSAO:
 		$$.label = labelFinal;
 		$$.traducao = codIntFinal;
 		$$.tipo = TIPO_BOOL;
+	}
+	| '-' EXPRESSAO %prec NUM_NEGATIVO
+	{
+		if(!operadorFuncionaEmTipo('-', $2.tipo))
+		{
+			semanticError("Expressao invalida -> o operador unario '-' nao pode ser aplicado ao tipo " + tipoParaString($2.tipo));
+            YYABORT; 
+		}
+		$$.label = novaVarTemp($2.tipo);
+		$$.tipo = $2.tipo;
+		$$.traducao = $2.traducao + "\t" + $$.label + " = -" + $2.label + ";\n";
 	}
 ;
 

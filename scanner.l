@@ -49,10 +49,13 @@ NOT (!|not)
 ">="   { coluna += 2; return OP_MAIOR_IGUAL; }
 "<"         { coluna ++; return OP_MENOR; }
 ">"         { coluna ++; return OP_MAIOR; }
+"++"        { coluna += 2; return OP_INC; }
+"--"        { coluna += 2; return OP_DEC; }
+
 
 
 [=]         { coluna++; return *yytext; }
-[+-/*]		{ coluna++; return *yytext; }
+[+/*-]		{ coluna++; return *yytext; }
 [()]        { coluna++; return *yytext; }
 [{}]        { coluna++; return *yytext; }
 [;]         { coluna++; return *yytext; }
