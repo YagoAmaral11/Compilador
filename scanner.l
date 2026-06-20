@@ -29,6 +29,8 @@ NOT (!|not)
 
 "\n"	   { linha++; coluna = 0; }
 {DELIM}    { coluna += strlen(yytext); }
+"//".*     {  }
+"/*"([^*]|\*+[^*/])*\*+"/"  {  }
 "if"       { coluna += strlen(yytext); return TK_IF; }
 "else"     { coluna += strlen(yytext); return TK_ELSE; }
 "while"    { coluna += strlen(yytext); return TK_WHILE; }

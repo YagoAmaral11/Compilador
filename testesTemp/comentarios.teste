@@ -1,0 +1,9 @@
+int a;
+int b;
+a = 5;
+b = 3;
+
+//teste de comentario
+
+output(a + b);
+/*Agora um bloco de comentarios */
