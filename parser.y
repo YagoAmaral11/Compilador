@@ -103,6 +103,24 @@ struct StringInfo
 	int tamanho;
 };
 
+struct fun_param
+{
+	string labelUsuario;
+	string labelReal;
+	TIPO tipo;
+};
+
+struct fun_assinatura
+{
+	string labelUsuario;
+	string labelReal;
+	TIPO tipoRetorno;
+	vector<fun_param> params;
+
+	string traducao;
+	string labelRetorno;
+};
+
 // Declarações de funções
 int yylex(void);
 void yyerror(string);
@@ -145,10 +163,12 @@ string StringDinamicaTamanho(string labelString);
 string StringAtribuição(string lString, string rString);
 string DeclararVariaveisTemporarias(bool* b, TIPO* tipoErrado);
 string DeclararVariaveisUsuario(bool* b, TIPO* tipoErrado);
+void DeclararVariaveisLocais(const vector<fun_param>& params);
 
 // Variáveis
 int var_temp_qnt; // Contador de variáveis temporárias
 int var_qnt; // Contador de variáveis globais não temporárias criadas
+int func_qnt; // Contador de funções criadas
 
 int label_qnt; // Contador de labels criadas
 int label_qnt_casos; // Contador de labels de casos criados; Usado para diferenciar os labels de casos dos labels de controle de fluxo
@@ -185,9 +205,20 @@ unordered_map<TIPO, string> tabelaFormatting;
 // Usado para guardar se uma string é dinâmica ou não e se seu tamanho é conhecido em tempo de compilação
 unordered_map<string, StringInfo*> tabelaStrings;
 
+// Usado para guardar a tabela de assinaturas de funções
+unordered_map<string, fun_assinatura> tabelaFuncoes;
+vector<fun_param> paramsAtuaisFunc; // Quais os parâmetros atuais que estão sendo lidos nessa função
+
+string funcaoAtual = "";
+TIPO tipoRetornoAtual;
+bool emFuncao = false;
+bool funcaoRetornouValor = false;
+vector<vector<atributos>> argsStack;
+
 // Macros
 #define tmpVarPrefix "tmp"
 #define varPrefix "var"
+#define funcPrefix "func"
 #define BOOL_TRUE 1 // Funciona pois no cod. intermediário o bool é um inteiro; Considerar 1 como true
 #define BOOL_FALSE 0 // Funciona pois no cod. intermediário o bool é um inteiro; Considerar 0 como false
 
@@ -223,6 +254,8 @@ unordered_map<string, StringInfo*> tabelaStrings;
 %token TIPO_STRING
 
 
+%token TK_RETURN
+
 %start OUTPUT
 
 %nonassoc TK_NO_ELSE // Usado para marcar o final de um comando if sem else, para resolver o "dangling else problem"; O TK_NO_ELSE é não associativo, ou seja, ele não pode ser associado a nenhum else; Assim, o else mais próximo de um if sempre será associado a ele, e não a um if mais distante
@@ -250,8 +283,7 @@ unordered_map<string, StringInfo*> tabelaStrings;
 
 OUTPUT: 
 	COMANDOS
-	{		
-		codigo_gerado = "#include <stdio.h>\n#include <string.h>\n#include <stdlib.h>\n" "\nint main(void)\n{\n";						
+	{				
 		bool abort = false;
 		TIPO tipo;
 
@@ -271,11 +303,23 @@ OUTPUT:
 			YYABORT;
 		}
 
+		// Declaração das funções usadas
+		string dec_funcoes_usuario;
+		
+		for (auto& par : tabelaFuncoes)
+		{
+			dec_funcoes_usuario += par.second.traducao + "\n";
+		}
+
+		// Código criado pelo usuario
 		string codigoUser = "\t// Codigo do Usuario\n" + $1.traducao;
 
+		// Código gerado final
+		codigo_gerado = "#include <stdio.h>\n#include <string.h>\n#include <stdlib.h>\n\n";						
 		codigo_gerado += varTemp;
 		codigo_gerado += varUser;
-		codigo_gerado += codigoUser;
+		codigo_gerado += dec_funcoes_usuario;
+		codigo_gerado += "int main(void)\n{\n" + codigoUser;
 
 		codigo_gerado += "\n\treturn 0;" "\n}\n";
 	}
@@ -365,6 +409,47 @@ COMANDO:
 	{
 		$$.traducao = $1.traducao;
 	}
+	| DECLARACAO_FUNCAO
+	{
+		if (tabelaSimbolos.size() > 1)
+		{
+			semanticError("As declarações de função só podem acontecer no escopo global");
+			YYABORT;
+		}
+	}
+	| TK_RETURN ';'
+    {
+        if (!emFuncao)
+        {
+            semanticError("Uso de return fora de função");
+            YYABORT;
+        }
+
+        if (tipoRetornoAtual != TIPO_VAZIO)
+        {
+            semanticError("Tipo de retorno inválido -> função '" + funcaoAtual + "' deve retornar um valor");
+            YYABORT;
+        }
+
+        $$.traducao = "\treturn;\n";
+    }
+    | TK_RETURN EXPRESSAO ';'
+    {
+        if (!emFuncao)
+        {
+            semanticError("Uso de return fora de função");
+            YYABORT;
+        }
+
+        if (!tipoPodeSerAtribuido(tipoRetornoAtual, $2.tipo))
+        {
+            semanticError("Tipo de retorno inválido para a função '" + funcaoAtual + "' -> esperado " + tipoParaString(tipoRetornoAtual) + ", encontrado " + tipoParaString($2.tipo));
+            YYABORT;
+        }
+
+        funcaoRetornouValor = true;
+        $$.traducao = $2.traducao + "\treturn " + $2.label + ";\n";
+    }
 ;
 
 COMANDO_OPCIONAL:
@@ -764,14 +849,14 @@ EXPRESSAO:
 	{
 		if (!varExiste($1.label))
 		{
-			// A variável não foi declarada ainda, erro			
+			// A variável não foi declarada ainda, erro		
 			semanticError("Símbolo não conhecido -> '" + $1.label + "' não é conhecido. Verifique se foi declarado.");
 			YYABORT;
 		}
 
 		if (!varInicializada($1.label))
 		{
-			// A variável não foi inicializada ainda, erro			
+			// A variável não foi inicializada ainda, erro		
 			semanticError("Variável não inicializada -> '" + $1.label + "'. Não é possível usar uma variável não inicializada");
 			YYABORT;
 		}
@@ -797,10 +882,10 @@ EXPRESSAO:
 				sinfo->tamanho = sinfoId->tamanho;	
 			}		
 			else
-			{				
+			{			
 				string tamStringId = StringDinamicaTamanho(idNomeReal);
 				string tmp = StringMalloc($$.label, tamStringId); // aloca a string dinâmica para essa expressão
-				malloc = tmp + "\t" + StringDinamicaTamanho($$.label) + " = " + tamStringId + ";\n"; // também altera a variável para guardar o tamanho dessa string dinâmica				
+				malloc = tmp + "\t" + StringDinamicaTamanho($$.label) + " = " + tamStringId + ";\n"; // também altera a variável para guardar o tamanho dessa string dinâmica			
 			}
 
 			tabelaStrings[$$.label] = sinfo;
@@ -808,6 +893,61 @@ EXPRESSAO:
 		}
 
 	}
+	| TK_ID '(' { argsStack.emplace_back(); } ARGS ')'
+    {
+        if (emFuncao && funcaoAtual == $1.label)
+        {
+            semanticError("Chamada recursiva de função não permitida -> '" + $1.label + "'");
+            YYABORT;
+        }
+
+        auto it = tabelaFuncoes.find($1.label);
+        if (it == tabelaFuncoes.end())
+        {
+            semanticError("Função não declarada -> '" + $1.label + "'");
+            YYABORT;
+        }
+
+        fun_assinatura& fn = it->second;
+        auto& args = argsStack.back();
+
+        if (args.size() != fn.params.size())
+        {
+            semanticError("Número de argumentos inválido para a função '" + $1.label + "'");
+            YYABORT;
+        }
+
+        string argsLabels = "";
+        string callsTraducao = "";
+        for (size_t i = 0; i < args.size(); ++i)
+        {
+            if (fn.params[i].tipo != args[i].tipo)
+            {
+                semanticError("Tipo de argumento inválido para a função '" + $1.label + "' no parâmetro " + to_string(i + 1));
+                YYABORT;
+            }
+
+            callsTraducao += args[i].traducao;
+            argsLabels += args[i].label;
+            if (i + 1 < args.size())
+                argsLabels += ", ";
+        }
+
+        if (fn.tipoRetorno == TIPO_VAZIO)
+        {
+            $$.label = "";
+            $$.tipo = TIPO_VAZIO;
+            $$.traducao = callsTraducao + "\t" + fn.labelReal + "(" + argsLabels + ");\n";
+        }
+        else
+        {
+            $$.label = novaVarTemp(fn.tipoRetorno);
+            $$.tipo = fn.tipoRetorno;
+            $$.traducao = callsTraducao + "\t" + $$.label + " = " + fn.labelReal + "(" + argsLabels + ");\n";
+        }
+
+        argsStack.pop_back();
+    }
 	| OP_INC TK_ID
 	{
 		// PRÉ-INCREMENTO: ++x 
@@ -1657,6 +1797,103 @@ DECLARACAO:
 	}
 ;
 
+DECLARACAO_FUNCAO:
+	TK_TIPO TK_ID '(' { paramsAtuaisFunc.clear(); funcaoAtual = $2.label; tipoRetornoAtual = $1.tipo; emFuncao = true; funcaoRetornouValor = false; } PARAMS_FUNCAO ')' '{' { empilharEscopo(); DeclararVariaveisLocais(paramsAtuaisFunc); } COMANDOS_OPCIONAIS '}'
+	{
+		desempilharEscopo();
+		
+		if ($1.tipo != TIPO_VAZIO && !funcaoRetornouValor)
+		{
+			semanticError("Função '" + $2.label + "' deve retornar um valor do tipo " + tipoParaString($1.tipo));
+			YYABORT;
+		}
+		
+		fun_assinatura* ass = new fun_assinatura;
+		ass->labelUsuario = $2.label;
+		ass->labelReal = funcPrefix + to_string(func_qnt++);
+		ass->tipoRetorno = $1.tipo;		
+		ass->params = paramsAtuaisFunc;
+		paramsAtuaisFunc.clear(); // no fim da declaração da função, limpa a lista novamente dos parâmetros
+
+		string header = tipoCodIntermediario($1.tipo) + " " + ass->labelReal + "(";
+		for (int i = 0; i < ass->params.size(); i++)
+		{
+			header += tipoCodIntermediario(ass->params[i].tipo) + " " + ass->params[i].labelReal;
+
+			if (i + 1 < ass->params.size())
+				header += ", ";
+		}
+		header += ") // " + ass->labelUsuario + "\n{\n";
+
+		ass->traducao = header + $9.traducao + "\n}\n";
+
+		ass->labelRetorno = "";
+		if ($1.tipo != TIPO_VAZIO)
+		{
+			ass->labelRetorno = novaVarTemp($1.tipo);
+		}		
+
+		tabelaFuncoes[$2.label] = *ass;
+		
+        funcaoAtual = "";
+        tipoRetornoAtual = TIPO_VAZIO;
+        emFuncao = false;
+        funcaoRetornouValor = false;
+
+		$$.traducao = "";
+	}
+;
+
+PARAMS_FUNCAO:
+	TK_TIPO TK_ID
+	{
+		// Evita que o tipo do parametro seja "void"
+		if ($1.tipo == TIPO_VAZIO)
+		{
+			semanticError("Um parâmetro não pode ser do tipo " + tipoParaString($1.tipo));
+			YYABORT;
+		}
+
+		fun_param param;
+		param.tipo = $1.tipo;
+		param.labelUsuario = $2.label;
+		param.labelReal = novaVarTemp($1.tipo);		
+
+		paramsAtuaisFunc.push_back(param);
+	}
+	| PARAMS_FUNCAO ',' TK_TIPO TK_ID
+	{
+		// Evita que o tipo do parametro seja "void"
+		if ($1.tipo == TIPO_VAZIO)
+		{
+			semanticError("Um parâmetro não pode ser do tipo " + tipoParaString($1.tipo));
+			YYABORT;
+		}
+
+		fun_param param;
+		param.tipo = $3.tipo;
+		param.labelUsuario = $4.label;		
+		param.labelReal = novaVarTemp($3.tipo);
+
+		paramsAtuaisFunc.push_back(param);
+	}
+	| /* vazio, fazendo os parametros serem opcionais */
+;
+
+ARGS:
+    /* vazio */
+    {
+    }
+    | EXPRESSAO
+    {
+        argsStack.back().push_back($1);
+    }
+    | ARGS ',' EXPRESSAO
+    {
+        argsStack.back().push_back($3);
+    }
+;
+
 %%
 
 // OBS: Esse include deve estar em acordo com os arquivos make, para que não haja erro na compilação; 
@@ -1826,6 +2063,9 @@ string tipoCodIntermediario(TIPO tipo)
 		case TIPO_CHAR:
 			return "char";
 			break;
+		case TIPO_VAZIO:
+			return "void";
+			break;
 	}
 	return "";
 }
@@ -1872,6 +2112,9 @@ string tipoParaString(TIPO tipo)
 			break;
 		case TIPO_STRING:
 			return "string";
+			break;
+		case TIPO_VAZIO:
+			return "void";
 			break;
 	}
 	return "unknown";
@@ -2483,11 +2726,35 @@ string DeclararVariaveisUsuario(bool* b, TIPO* tipoErrado)
 	return codigo_gerado;
 }
 
+// Usado nas funções para declarar corretamente as variáveis locais dentro do bloco da função
+void DeclararVariaveisLocais(const vector<fun_param>& params)
+{
+	for (auto& p : params)
+	{
+		Simbolo* s = new Simbolo;
+
+		s->labelReal = p.labelReal;
+		s->labelUsuario = p.labelUsuario;
+		s->tipoDeclarado = p.tipo;
+		s->simboloInicializado = true; // Uma variável local passada por param. sempre é inicializada
+
+		tabelaSimbolos.back()[p.labelUsuario] = s;		
+			
+		if (p.tipo == TIPO_STRING)
+		{
+			StringInfo* sinfo = novaString();
+			sinfo->éDinâmica = true;				
+			tabelaStrings[s->labelReal] = sinfo;				
+		}
+	}
+}
+
 // Usado para inicializar as estruturas e controladores usados no compilador;
 void initialize()
 {
 	var_temp_qnt = 0;
 	var_qnt = 0;
+	func_qnt = 0;
 	usandoInputBuffer = false;
 
 	inicializarTabelaConversao();

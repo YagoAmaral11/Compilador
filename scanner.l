@@ -58,6 +58,7 @@ NOT (!|not)
 "*="       { coluna += 2; return OP_MULT_IGUAL; }
 "/="       { coluna += 2; return OP_DIV_IGUAL; }
 
+","         { coluna++; return *yytext; }
 
 [=]         { coluna++; return *yytext; }
 [+/*-]		{ coluna++; return *yytext; }
@@ -71,9 +72,12 @@ NOT (!|not)
 "char"      { coluna += strlen(yytext); yylval.tipo = TIPO_CHAR; return TK_TIPO; }
 "bool"      { coluna += strlen(yytext); yylval.tipo = TIPO_BOOL; return TK_TIPO; }
 "string"    { coluna += strlen(yytext); yylval.tipo = TIPO_STRING; return TK_TIPO; }
+"void"      { coluna += strlen(yytext); yylval.tipo = TIPO_VAZIO; return TK_TIPO; }
 "var"       { coluna += strlen(yytext); return TK_VAR; }
 "input"     { coluna += strlen(yytext); return TK_INPUT; }
 "output"     { coluna += strlen(yytext); return TK_OUTPUT; }
+
+"return"    { coluna += strlen(yytext); return TK_RETURN; }
 
 {INT}		{ coluna += strlen(yytext); yylval.label = yytext; yylval.tipo = TIPO_INT; return TK_NUM; }
 {FLOAT}		{ coluna += strlen(yytext); yylval.label = yytext; yylval.tipo = TIPO_FLOAT; return TK_NUM; }

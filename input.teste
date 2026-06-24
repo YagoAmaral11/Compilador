@@ -1,6 +1,6 @@
-var x = "teste";
-x++;
-++x;
---x;
-x--;
-output x;
+string teste(string a)
+{
+    return a + " adicionado";
+}
+
+output teste("Oi");
