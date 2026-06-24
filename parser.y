@@ -895,6 +895,12 @@ EXPRESSAO:
 	}
 	| TK_ID '(' { argsStack.emplace_back(); } ARGS ')'
     {
+        if (emFuncao && funcaoAtual == $1.label)
+        {
+            semanticError("Chamada recursiva de função não permitida -> '" + $1.label + "'");
+            YYABORT;
+        }
+
         auto it = tabelaFuncoes.find($1.label);
         if (it == tabelaFuncoes.end())
         {

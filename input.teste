@@ -1,8 +1,6 @@
-void teste(int a, float b)
+string teste(string a)
 {
-    output a + b;
+    return a + " adicionado";
 }
 
-int a = 50;
-
-teste(a, 20.0);
+output teste("Oi");
