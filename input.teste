@@ -1,6 +1,4 @@
-var x = "teste";
-x++;
-++x;
---x;
-x--;
-output x;
+float funcao(int a, float b)
+{ 
+    output a + b;
+}

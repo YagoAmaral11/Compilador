@@ -58,6 +58,7 @@ NOT (!|not)
 "*="       { coluna += 2; return OP_MULT_IGUAL; }
 "/="       { coluna += 2; return OP_DIV_IGUAL; }
 
+","         { coluna++; return *yytext; }
 
 [=]         { coluna++; return *yytext; }
 [+/*-]		{ coluna++; return *yytext; }
