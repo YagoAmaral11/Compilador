@@ -824,6 +824,84 @@ EXPRESSAO:
 		}
 
 	}
+	| TK_ID DIMENSAO
+	{
+		if (!varExiste($1.label))
+		{
+			// A variável não foi declarada ainda, erro			
+			semanticError("Símbolo não conhecido -> '" + $1.label + "' não é conhecido. Verifique se foi declarado.");
+			YYABORT;
+		}
+
+		/*if (!varInicializada($1.label))
+		{
+			// A variável não foi inicializada ainda, erro			
+			semanticError("Variável não inicializada -> '" + $1.label + "'. Não é possível usar uma variável não inicializada");
+			YYABORT;
+		}*/
+
+		Simbolo* s = obterSimbolo($1.label);
+		
+		if (!s->éMatriz)
+		{
+			semanticError("Erro de tipo -> O identificador '" + $1.label + "' não é uma matriz. Tipo encontrado: '" + tipoParaString($1.tipo) + "'.");
+			YYABORT;
+		}
+
+		MatrizInfo* m = tabelaMatrizes[varNomeReal($1.label)];
+
+		if (m->qntDimensao != dimTemp.size())
+		{
+			string msgErro = "Erro de dimensão -> A matriz '" + $1.label + "' tem " + to_string(m->qntDimensao) + " dimensões, mas foram fornecidas " + to_string(dimTemp.size()) + " dimensões.";
+			if (m->qntDimensao == 0)
+				msgErro += " A matriz não possui dimensões definidas.";
+			else
+				msgErro += " Dimensões da matriz: [" + to_string(m->qntDimensao) + "]";
+				for (size_t i = 0; i < m->qntDimensao; ++i)
+					msgErro += "[" + m->dimensoes[i] + "]";
+				msgErro += ".";
+			semanticError(msgErro);
+			YYABORT;
+		}
+
+		string tradAcesso;
+		string labelAcesso;
+		string labelAcessoTemp1;
+		string labelAcessoTemp2;
+		string labelAcessoTemp3;
+
+		for(int i = 0; i < m->qntDimensao; i++)
+		{
+
+			if (m->qntDimensao == 1) // Vetor unidimensional
+			{
+				labelAcesso = novaVarTemp(TIPO_INT);		
+				tradAcesso += "\t" + labelAcesso + " = " + dimTemp[i] + ";\n"; // Acessa a matriz com as dimensões fornecidas
+			} 
+			else if (i == 0) // Primeira dimensão
+			{
+				labelAcessoTemp1 = novaVarTemp(TIPO_INT);
+				tradAcesso += "\t" + labelAcessoTemp1 + " = " + dimTemp[i] + ";\n"; // Acessa a matriz com as dimensões fornecidas
+				labelAcesso = labelAcessoTemp1;
+			}
+			else
+			{	
+				labelAcessoTemp2 = novaVarTemp(TIPO_INT);
+				labelAcessoTemp3 = novaVarTemp(TIPO_INT);
+				tradAcesso += "\t" + labelAcessoTemp2 + " = " + labelAcessoTemp1 + " * " + m->dimensoes[i] + ";\n"; // Multiplica pelo tamanho da dimensão atual
+				tradAcesso += "\t" + labelAcessoTemp3 + " = " + labelAcessoTemp2 + " + " + dimTemp[i] + ";\n"; // Soma o índice da dimensão atual
+				labelAcesso = labelAcessoTemp3; // Atualiza o label de acesso para a próxima dimensão
+				labelAcessoTemp1 = labelAcessoTemp3; // Para as próximas dimensões, usar o resultado da dimensão anterior
+			}
+		}
+
+		$$.label = novaVarTemp($1.tipo);
+
+		$$.tipo = $1.tipo;
+		$$.traducao = $1.traducao + $2.traducao + tradAcesso + "\t" + $$.label + " = " + varNomeReal($1.label) + "[" + labelAcesso + "];\n";
+
+		dimTemp.clear(); // Limpa as dimensões temporárias após o uso
+	}
 	| OP_INC TK_ID
 	{
 		// PRÉ-INCREMENTO: ++x 
@@ -1379,7 +1457,7 @@ ATRIBUICAO:
 
 ATRIBUICAO_NAO_DECLARACATIVA:
 	TK_ID '=' EXPRESSAO
-	{		
+	{
 		// Se a variável já foi declarada, apenas altera seu valor; 
 		// Se a variável não era inicializada ainda, agora ela é;		
 		string labelExp = $3.label;
@@ -1535,7 +1613,7 @@ ATRIBUICAO_NAO_DECLARACATIVA:
 	}	
 ;
 
-ATRIBUICAO_DECLARACATIVA:		
+ATRIBUICAO_DECLARACATIVA:
 	DECLARACAO '=' EXPRESSAO
 	{
 		// OBS: Declaração com inicialização; Em declaração a variável já é declarada corretamente; Aqui basta adicionar o valor da expressão se for do mesmo tipo e
@@ -1543,6 +1621,13 @@ ATRIBUICAO_DECLARACATIVA:
 		string labelExp = $3.label;
 		string tradConversao = "";
 
+		Simbolo* s = obterSimbolo($1.label);
+
+		if(s->éMatriz)
+		{
+			semanticError("Não é possível atribuir uma matriz.");
+			YYABORT;
+		}
 		if (!tipoPodeSerAtribuido(varTipo($1.label), $3.tipo))
 		{
 			semanticError("Erro de tipo -> Uma expressão de tipo '" + tipoParaString($3.tipo) + "' não pode ser atribuída em uma variável do tipo '" + tipoParaString(varTipo($1.label)) + "'.");
@@ -1556,8 +1641,6 @@ ATRIBUICAO_DECLARACATIVA:
 
 		$$.label = $1.label;
 		$$.traducao = $3.traducao + "\t" + tradConversao + varNomeReal($1.label) + " = " + labelExp + ";" + " // " + $1.label + "\n";
-
-		Simbolo* s = obterSimbolo($1.label);
 
 		if ($1.tipo == TIPO_STRING)
 		{
@@ -1580,10 +1663,18 @@ ATRIBUICAO_DECLARACATIVA:
 		// Ler o input do tipo da Declaração
 		// Aqui não tem como TK_INPUT virar expressão pois é necessário inferir o tipo de TK_INPUT
 
+		
+		Simbolo* s = obterSimbolo($1.label);
+
 		TIPO tipoExp = varTipo($1.label);		
 		$$.label = $1.label;
 
-		if (tipoExp == TIPO_STRING)
+		if(s->éMatriz)
+		{
+			semanticError("Não é possível ler uma matriz na entrada.");
+			YYABORT;
+		}
+		else if (tipoExp == TIPO_STRING)
 		{
 			string labelExp;
 			string labelExpTamanho;
@@ -1601,7 +1692,6 @@ ATRIBUICAO_DECLARACATIVA:
 			$$.traducao = "\tscanf(\"" + tabelaFormatting[tipoExp] + "\", &" + labelExp + ");\n" + "\t" + varNomeReal($1.label) + " = " + labelExp + ";" + " // " + $1.label + "\n";
 		}				
 
-		Simbolo* s = obterSimbolo($1.label);
 		s->simboloInicializado = true; 
 
 	}		
@@ -1700,25 +1790,32 @@ DECLARACAO:
 			dimTemp.clear();
 
 			string labelDim;
-			string labelTam = novaVarTemp(TIPO_INT);
+			string labelDim1;
+			string labelDim2;
 			string traducaoDimensoes = "";
 
 			for(int i = 0; i < m->qntDimensao; i++)
 			{
-				labelDim = novaVarTemp(TIPO_INT);
 
 				if (i == 0)
 				{
-					traducaoDimensoes += "\t" + labelDim + " = " + m->dimensoes[i] + ";\n";
+					labelDim1 = novaVarTemp(TIPO_INT);
+					traducaoDimensoes += "\t" + labelDim1 + " = " + m->dimensoes[i] + ";\n";
+					labelDim = labelDim1;
 				}
 				else
 				{
-					traducaoDimensoes += "\t" + labelDim + " = " + labelDim + " * " + m->dimensoes[i] + ";\n";
+					labelDim2 = novaVarTemp(TIPO_INT);
+					traducaoDimensoes += "\t" + labelDim2 + " = " + labelDim1 + " * " + m->dimensoes[i] + ";\n";
+					labelDim = labelDim2;
+					labelDim1 = labelDim2;
 				}
 			}
 			
+			string labelTipo = novaVarTemp(TIPO_INT);
+			string labelTam = novaVarTemp(TIPO_INT);
 
-			$$.traducao = $3.traducao + traducaoDimensoes + "\t" + labelTam + " = " + labelDim + " * " + "sizeof(" + tipoParaString($1.tipo) + ")" + ";\n" + "\t" + varNomeReal($2.label) + " = malloc(" + labelTam + ");\n";
+			$$.traducao = $3.traducao + traducaoDimensoes + "\t" + labelTipo + " = sizeof(" + tipoParaString($1.tipo) + ");\n" + "\t" + labelTam + " = " + labelDim + " * " + labelTipo + ";\n" + "\t" + varNomeReal($2.label) + " = malloc(" + labelTam + ");\n";
 		}
 	}
 ;
@@ -1732,11 +1829,9 @@ DIMENSAO:
 			YYABORT;
 		}
 
-		string labelDim = novaVarTemp(TIPO_INT);
+		$$.traducao = $2.traducao;
 
-		$$.traducao = $2.traducao + "\t" + labelDim + " = " + $2.label + ";\n";
-
-		dimTemp.push_back(labelDim);
+		dimTemp.push_back($2.label);
 	}
 	| DIMENSAO '[' EXPRESSAO ']'
 	{
@@ -1745,8 +1840,6 @@ DIMENSAO:
 			semanticError("Dimensao de matriz invalida -> o tamanho da dimensao deve ser do tipo inteiro, mas foi fornecido um valor do tipo " + tipoParaString($3.tipo));
 			YYABORT;
 		}
-
-		string labelDim = novaVarTemp(TIPO_INT);
 
 		$$.traducao = $1.traducao + $3.traducao;
 
