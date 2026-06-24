@@ -240,6 +240,7 @@ unordered_map<string, StringInfo*> tabelaStrings;
 %left '+' '-'
 %left '*' '/'
 
+%left '(' ')'
 %right OP_NOT OP_INC OP_DEC NUM_NEGATIVO
 
 
@@ -385,7 +386,7 @@ BLOCO:
 	}
 ;
 
-IF :
+IF:
 	IF_PREFIXO COMANDO_OPCIONAL %prec TK_NO_ELSE
 	{
 
@@ -810,6 +811,7 @@ EXPRESSAO:
 	| OP_INC TK_ID
 	{
 		// PRÉ-INCREMENTO: ++x 
+		if (!operadorFuncionaEmTipo('+', $2.tipo)) { semanticError("O operador '+' não pode ser usado no tipo " + tipoParaString($2.tipo)); YYABORT; }
 		if (!varExiste($2.label)) { semanticError("Símbolo não conhecido."); YYABORT; }
 		if (!varInicializada($2.label)) { semanticError("Variável não inicializada."); YYABORT; }
 
@@ -825,6 +827,7 @@ EXPRESSAO:
 	| TK_ID OP_INC
 	{
 		// PÓS-INCREMENTO: x++ 
+		if (!operadorFuncionaEmTipo('+', $1.tipo)) { semanticError("O operador '+' não pode ser usado no tipo " + tipoParaString($1.tipo)); YYABORT; }
 		if (!varExiste($1.label)) { semanticError("Símbolo não conhecido."); YYABORT; }
 		if (!varInicializada($1.label)) { semanticError("Variável não inicializada."); YYABORT; }
 
@@ -840,6 +843,7 @@ EXPRESSAO:
 	| OP_DEC TK_ID 
 	{
 		// PRÉ-DECREMENTO: --x 
+		if (!operadorFuncionaEmTipo('-', $2.tipo)) { semanticError("O operador '-' não pode ser usado no tipo " + tipoParaString($2.tipo)); YYABORT; }
 		if (!varExiste($2.label)) { semanticError("Símbolo não conhecido."); YYABORT; }
 		if (!varInicializada($2.label)) { semanticError("Variável não inicializada."); YYABORT; }
 
@@ -855,6 +859,7 @@ EXPRESSAO:
 	| TK_ID OP_DEC
 	{
 		// PÓS-DECREMENTO: x-- 
+		if (!operadorFuncionaEmTipo('-', $1.tipo)) { semanticError("O operador '-' não pode ser usado no tipo " + tipoParaString($1.tipo)); YYABORT; }
 		if (!varExiste($1.label)) { semanticError("Símbolo não conhecido."); YYABORT; }
 		if (!varInicializada($1.label)) { semanticError("Variável não inicializada."); YYABORT; }
 

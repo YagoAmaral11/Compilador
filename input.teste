@@ -1,24 +1,6 @@
-while (true)
-{
-    var lido = input(int);
-    if (lido > 10)
-    {
-        string a = "Teste";
-        string b;
-        var c = input(string);
-
-        b = input;
-
-        output a;
-        output b;
-        output c;
-        output a + b;
-        output a + b + c + 'F';
-    }
-    else if (lido == 5)
-    {
-        escape;
-    }
-}
-
-output "Fim"
+var x = "teste";
+x++;
+++x;
+--x;
+x--;
+output x;
