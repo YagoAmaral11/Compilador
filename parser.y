@@ -223,6 +223,8 @@ unordered_map<string, StringInfo*> tabelaStrings;
 %token TIPO_STRING
 
 
+%token TK_RETURN
+
 %start OUTPUT
 
 %nonassoc TK_NO_ELSE // Usado para marcar o final de um comando if sem else, para resolver o "dangling else problem"; O TK_NO_ELSE é não associativo, ou seja, ele não pode ser associado a nenhum else; Assim, o else mais próximo de um if sempre será associado a ele, e não a um if mais distante
@@ -1654,6 +1656,24 @@ DECLARACAO:
 				tabelaStrings[s->labelReal] = sinfo;				
 			}
 		}
+	}
+;
+
+DECLARACAO_FUNCAO:
+	TK_TIPO TK_ID '(' PARAMS_FUNCAO ')' 
+	{
+
+	}
+;
+
+PARAMS_FUNCAO:
+	TK_TIPO TK_ID
+	{
+
+	}
+	| PARAMS_FUNCAO TK_TIPO TK_ID
+	{
+		
 	}
 ;
 
