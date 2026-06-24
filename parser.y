@@ -209,6 +209,12 @@ unordered_map<string, StringInfo*> tabelaStrings;
 unordered_map<string, fun_assinatura> tabelaFuncoes;
 vector<fun_param> paramsAtuaisFunc; // Quais os parâmetros atuais que estão sendo lidos nessa função
 
+string funcaoAtual = "";
+TIPO tipoRetornoAtual;
+bool emFuncao = false;
+bool funcaoRetornouValor = false;
+vector<vector<atributos>> argsStack;
+
 // Macros
 #define tmpVarPrefix "tmp"
 #define varPrefix "var"
@@ -411,6 +417,39 @@ COMANDO:
 			YYABORT;
 		}
 	}
+	| TK_RETURN ';'
+    {
+        if (!emFuncao)
+        {
+            semanticError("Uso de return fora de função");
+            YYABORT;
+        }
+
+        if (tipoRetornoAtual != TIPO_VAZIO)
+        {
+            semanticError("Tipo de retorno inválido -> função '" + funcaoAtual + "' deve retornar um valor");
+            YYABORT;
+        }
+
+        $$.traducao = "\treturn;\n";
+    }
+    | TK_RETURN EXPRESSAO ';'
+    {
+        if (!emFuncao)
+        {
+            semanticError("Uso de return fora de função");
+            YYABORT;
+        }
+
+        if (!tipoPodeSerAtribuido(tipoRetornoAtual, $2.tipo))
+        {
+            semanticError("Tipo de retorno inválido para a função '" + funcaoAtual + "' -> esperado " + tipoParaString(tipoRetornoAtual) + ", encontrado " + tipoParaString($2.tipo));
+            YYABORT;
+        }
+
+        funcaoRetornouValor = true;
+        $$.traducao = $2.traducao + "\treturn " + $2.label + ";\n";
+    }
 ;
 
 COMANDO_OPCIONAL:
@@ -810,14 +849,14 @@ EXPRESSAO:
 	{
 		if (!varExiste($1.label))
 		{
-			// A variável não foi declarada ainda, erro			
+			// A variável não foi declarada ainda, erro		
 			semanticError("Símbolo não conhecido -> '" + $1.label + "' não é conhecido. Verifique se foi declarado.");
 			YYABORT;
 		}
 
 		if (!varInicializada($1.label))
 		{
-			// A variável não foi inicializada ainda, erro			
+			// A variável não foi inicializada ainda, erro		
 			semanticError("Variável não inicializada -> '" + $1.label + "'. Não é possível usar uma variável não inicializada");
 			YYABORT;
 		}
@@ -843,10 +882,10 @@ EXPRESSAO:
 				sinfo->tamanho = sinfoId->tamanho;	
 			}		
 			else
-			{				
+			{			
 				string tamStringId = StringDinamicaTamanho(idNomeReal);
 				string tmp = StringMalloc($$.label, tamStringId); // aloca a string dinâmica para essa expressão
-				malloc = tmp + "\t" + StringDinamicaTamanho($$.label) + " = " + tamStringId + ";\n"; // também altera a variável para guardar o tamanho dessa string dinâmica				
+				malloc = tmp + "\t" + StringDinamicaTamanho($$.label) + " = " + tamStringId + ";\n"; // também altera a variável para guardar o tamanho dessa string dinâmica			
 			}
 
 			tabelaStrings[$$.label] = sinfo;
@@ -854,6 +893,55 @@ EXPRESSAO:
 		}
 
 	}
+	| TK_ID '(' { argsStack.emplace_back(); } ARGS ')'
+    {
+        auto it = tabelaFuncoes.find($1.label);
+        if (it == tabelaFuncoes.end())
+        {
+            semanticError("Função não declarada -> '" + $1.label + "'");
+            YYABORT;
+        }
+
+        fun_assinatura& fn = it->second;
+        auto& args = argsStack.back();
+
+        if (args.size() != fn.params.size())
+        {
+            semanticError("Número de argumentos inválido para a função '" + $1.label + "'");
+            YYABORT;
+        }
+
+        string argsLabels = "";
+        string callsTraducao = "";
+        for (size_t i = 0; i < args.size(); ++i)
+        {
+            if (fn.params[i].tipo != args[i].tipo)
+            {
+                semanticError("Tipo de argumento inválido para a função '" + $1.label + "' no parâmetro " + to_string(i + 1));
+                YYABORT;
+            }
+
+            callsTraducao += args[i].traducao;
+            argsLabels += args[i].label;
+            if (i + 1 < args.size())
+                argsLabels += ", ";
+        }
+
+        if (fn.tipoRetorno == TIPO_VAZIO)
+        {
+            $$.label = "";
+            $$.tipo = TIPO_VAZIO;
+            $$.traducao = callsTraducao + "\t" + fn.labelReal + "(" + argsLabels + ");\n";
+        }
+        else
+        {
+            $$.label = novaVarTemp(fn.tipoRetorno);
+            $$.tipo = fn.tipoRetorno;
+            $$.traducao = callsTraducao + "\t" + $$.label + " = " + fn.labelReal + "(" + argsLabels + ");\n";
+        }
+
+        argsStack.pop_back();
+    }
 	| OP_INC TK_ID
 	{
 		// PRÉ-INCREMENTO: ++x 
@@ -1704,9 +1792,15 @@ DECLARACAO:
 ;
 
 DECLARACAO_FUNCAO:
-	TK_TIPO TK_ID '(' { paramsAtuaisFunc.clear(); } PARAMS_FUNCAO ')' '{' { empilharEscopo(); DeclararVariaveisLocais(paramsAtuaisFunc); } COMANDOS_OPCIONAIS '}'
+	TK_TIPO TK_ID '(' { paramsAtuaisFunc.clear(); funcaoAtual = $2.label; tipoRetornoAtual = $1.tipo; emFuncao = true; funcaoRetornouValor = false; } PARAMS_FUNCAO ')' '{' { empilharEscopo(); DeclararVariaveisLocais(paramsAtuaisFunc); } COMANDOS_OPCIONAIS '}'
 	{
 		desempilharEscopo();
+		
+		if ($1.tipo != TIPO_VAZIO && !funcaoRetornouValor)
+		{
+			semanticError("Função '" + $2.label + "' deve retornar um valor do tipo " + tipoParaString($1.tipo));
+			YYABORT;
+		}
 		
 		fun_assinatura* ass = new fun_assinatura;
 		ass->labelUsuario = $2.label;
@@ -1734,6 +1828,11 @@ DECLARACAO_FUNCAO:
 		}		
 
 		tabelaFuncoes[$2.label] = *ass;
+		
+        funcaoAtual = "";
+        tipoRetornoAtual = TIPO_VAZIO;
+        emFuncao = false;
+        funcaoRetornouValor = false;
 
 		$$.traducao = "";
 	}
@@ -1773,6 +1872,20 @@ PARAMS_FUNCAO:
 		paramsAtuaisFunc.push_back(param);
 	}
 	| /* vazio, fazendo os parametros serem opcionais */
+;
+
+ARGS:
+    /* vazio */
+    {
+    }
+    | EXPRESSAO
+    {
+        argsStack.back().push_back($1);
+    }
+    | ARGS ',' EXPRESSAO
+    {
+        argsStack.back().push_back($3);
+    }
 ;
 
 %%
