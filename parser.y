@@ -201,6 +201,7 @@ unordered_map<string, StringInfo*> tabelaStrings;
 %token TK_VAR
 
 %token OP_NOT OP_AND OP_OR
+%token OP_MAIS_IGUAL OP_MENOS_IGUAL OP_MULT_IGUAL OP_DIV_IGUAL
 
 // TOKEN PARA OS DIFERENTES COMANDOS DE CONTROLE DE FLUXO; OBS: Para cada comando novo, deve-se criar um token correspondente e alterar o lexer para retornar esse token quando encontrar a palavra reservada do comando
 %token TK_IF TK_ELSE TK_WHILE TK_FOR TK_SWITCH TK_CASE TK_DEFAULT TK_DO
@@ -227,7 +228,7 @@ unordered_map<string, StringInfo*> tabelaStrings;
 %nonassoc TK_NO_ELSE // Usado para marcar o final de um comando if sem else, para resolver o "dangling else problem"; O TK_NO_ELSE é não associativo, ou seja, ele não pode ser associado a nenhum else; Assim, o else mais próximo de um if sempre será associado a ele, e não a um if mais distante
 %nonassoc TK_ELSE // Para resolver o "dangling else problem"; O TK_ELSE é não associativo, ou seja, ele só pode ser associado ao if mais próximo; Assim, o else mais próximo de um if sempre será associado a ele, e não a um if mais distante
 
-%right '='
+%right '=' OP_MAIS_IGUAL OP_MENOS_IGUAL OP_MULT_IGUAL OP_DIV_IGUAL
 
 /*Operadores logicos*/
 %left OP_OR
@@ -238,8 +239,12 @@ unordered_map<string, StringInfo*> tabelaStrings;
 
 %left '+' '-'
 %left '*' '/'
-%left OP_NOT
+
 %left '(' ')'
+%right OP_NOT OP_INC OP_DEC NUM_NEGATIVO
+
+
+
 
 %%
 
@@ -381,7 +386,7 @@ BLOCO:
 	}
 ;
 
-IF :
+IF:
 	IF_PREFIXO COMANDO_OPCIONAL %prec TK_NO_ELSE
 	{
 
@@ -802,6 +807,70 @@ EXPRESSAO:
 			$$.traducao = malloc + "\tstrcpy(" + $$.label + ", " + idNomeReal + ");\n";
 		}
 
+	}
+	| OP_INC TK_ID
+	{
+		// PRÉ-INCREMENTO: ++x 
+		if (!operadorFuncionaEmTipo('+', $2.tipo)) { semanticError("O operador '+' não pode ser usado no tipo " + tipoParaString($2.tipo)); YYABORT; }
+		if (!varExiste($2.label)) { semanticError("Símbolo não conhecido."); YYABORT; }
+		if (!varInicializada($2.label)) { semanticError("Variável não inicializada."); YYABORT; }
+
+		TIPO tipoId = varTipo($2.label);
+		string nomeReal = varNomeReal($2.label);
+
+		$$.label = novaVarTemp(tipoId);
+		$$.tipo = tipoId;
+		// LOGICA PRÉ: Soma primeiro, salva no temporário depois
+		$$.traducao = "\t" + nomeReal + " = " + nomeReal + " + 1;\n" 
+                    + "\t" + $$.label + " = " + nomeReal + ";\n";
+	}
+	| TK_ID OP_INC
+	{
+		// PÓS-INCREMENTO: x++ 
+		if (!operadorFuncionaEmTipo('+', $1.tipo)) { semanticError("O operador '+' não pode ser usado no tipo " + tipoParaString($1.tipo)); YYABORT; }
+		if (!varExiste($1.label)) { semanticError("Símbolo não conhecido."); YYABORT; }
+		if (!varInicializada($1.label)) { semanticError("Variável não inicializada."); YYABORT; }
+
+		TIPO tipoId = varTipo($1.label);
+		string nomeReal = varNomeReal($1.label);
+
+		$$.label = novaVarTemp(tipoId);
+		$$.tipo = tipoId;
+		// LOGICA PÓS: Salva no temporário primeiro, soma depois
+		$$.traducao = "\t" + $$.label + " = " + nomeReal + ";\n" 
+                    + "\t" + nomeReal + " = " + nomeReal + " + 1;\n";
+	}
+	| OP_DEC TK_ID 
+	{
+		// PRÉ-DECREMENTO: --x 
+		if (!operadorFuncionaEmTipo('-', $2.tipo)) { semanticError("O operador '-' não pode ser usado no tipo " + tipoParaString($2.tipo)); YYABORT; }
+		if (!varExiste($2.label)) { semanticError("Símbolo não conhecido."); YYABORT; }
+		if (!varInicializada($2.label)) { semanticError("Variável não inicializada."); YYABORT; }
+
+		TIPO tipoId = varTipo($2.label);
+		string nomeReal = varNomeReal($2.label);
+
+		$$.label = novaVarTemp(tipoId);
+		$$.tipo = tipoId;
+		// LOGICA PRÉ: Subtrai primeiro, salva no temporário depois
+		$$.traducao = "\t" + nomeReal + " = " + nomeReal + " - 1;\n" 
+                    + "\t" + $$.label + " = " + nomeReal + ";\n";
+	}
+	| TK_ID OP_DEC
+	{
+		// PÓS-DECREMENTO: x-- 
+		if (!operadorFuncionaEmTipo('-', $1.tipo)) { semanticError("O operador '-' não pode ser usado no tipo " + tipoParaString($1.tipo)); YYABORT; }
+		if (!varExiste($1.label)) { semanticError("Símbolo não conhecido."); YYABORT; }
+		if (!varInicializada($1.label)) { semanticError("Variável não inicializada."); YYABORT; }
+
+		TIPO tipoId = varTipo($1.label);
+		string nomeReal = varNomeReal($1.label);
+
+		$$.label = novaVarTemp(tipoId);
+		$$.tipo = tipoId;
+		// LOGICA PÓS: Salva no temporário primeiro, subtrai depois
+		$$.traducao = "\t" + $$.label + " = " + nomeReal + ";\n" 
+                    + "\t" + nomeReal + " = " + nomeReal + " - 1;\n";
 	}
 	| TK_INPUT '(' TK_TIPO ')'
 	{
@@ -1273,6 +1342,17 @@ EXPRESSAO:
 		$$.traducao = codIntFinal;
 		$$.tipo = TIPO_BOOL;
 	}
+	| '-' EXPRESSAO %prec NUM_NEGATIVO
+	{
+		if(!operadorFuncionaEmTipo('-', $2.tipo))
+		{
+			semanticError("Expressao invalida -> o operador unario '-' nao pode ser aplicado ao tipo " + tipoParaString($2.tipo));
+            YYABORT; 
+		}
+		$$.label = novaVarTemp($2.tipo);
+		$$.tipo = $2.tipo;
+		$$.traducao = $2.traducao + "\t" + $$.label + " = -" + $2.label + ";\n";
+	}
 ;
 
 ATRIBUICAO:
@@ -1351,6 +1431,91 @@ ATRIBUICAO_NAO_DECLARACATIVA:
 		
 		Simbolo* s = obterSimbolo($1.label);
 		s->simboloInicializado = true; 		
+	}
+	| TK_ID OP_MAIS_IGUAL EXPRESSAO
+	{
+		if (!varExiste($1.label)) { semanticError("A variável " + $1.label + " é desconhecida"); YYABORT; }
+		if (!varInicializada($1.label)) { semanticError("Variável não inicializada."); YYABORT; }
+
+		TIPO tipoId = varTipo($1.label);
+		string nomeReal = varNomeReal($1.label);
+		string labelExp = $3.label;
+		string tradConversao = "";
+
+		// Verifica compatibilidade usando a operação base do composto
+		if (!operadorFuncionaEmTipo('+', tipoId)) { semanticError("O operador '+=' não suporta o tipo " + tipoParaString(tipoId)); YYABORT; }
+		if (!tipoPodeSerAtribuido(tipoId, $3.tipo)) { semanticError("Erro de tipo na atribuição composta."); YYABORT; }
+
+		if (tipoId != $3.tipo)
+		{
+			tradConversao = ConversaoCodIntermediario($3.label, $3.tipo, tipoId, labelExp) + "\t";
+		}
+
+		$$.label = $1.label;
+		$$.traducao = $3.traducao + "\t" + tradConversao + nomeReal + " = " + nomeReal + " + " + labelExp + "; // " + $1.label + "\n";
+	}
+	| TK_ID OP_MENOS_IGUAL EXPRESSAO
+	{
+		if (!varExiste($1.label)) { semanticError("A variável " + $1.label + " é desconhecida"); YYABORT; }
+		if (!varInicializada($1.label)) { semanticError("Variável não inicializada."); YYABORT; }
+
+		TIPO tipoId = varTipo($1.label);
+		string nomeReal = varNomeReal($1.label);
+		string labelExp = $3.label;
+		string tradConversao = "";
+
+		if (!operadorFuncionaEmTipo('-', tipoId)) { semanticError("O operador '-=' não suporta o tipo " + tipoParaString(tipoId)); YYABORT; }
+		if (!tipoPodeSerAtribuido(tipoId, $3.tipo)) { semanticError("Erro de tipo na atribuição composta."); YYABORT; }
+
+		if (tipoId != $3.tipo)
+		{
+			tradConversao = ConversaoCodIntermediario($3.label, $3.tipo, tipoId, labelExp) + "\t";
+		}
+
+		$$.label = $1.label;
+		$$.traducao = $3.traducao + "\t" + tradConversao + nomeReal + " = " + nomeReal + " - " + labelExp + "; // " + $1.label + "\n";
+	}
+	| TK_ID OP_MULT_IGUAL EXPRESSAO
+	{
+		if (!varExiste($1.label)) { semanticError("A variável " + $1.label + " é desconhecida"); YYABORT; }
+		if (!varInicializada($1.label)) { semanticError("Variável não inicializada."); YYABORT; }
+
+		TIPO tipoId = varTipo($1.label);
+		string nomeReal = varNomeReal($1.label);
+		string labelExp = $3.label;
+		string tradConversao = "";
+
+		if (!operadorFuncionaEmTipo('*', tipoId)) { semanticError("O operador '*=' não suporta o tipo " + tipoParaString(tipoId)); YYABORT; }
+		if (!tipoPodeSerAtribuido(tipoId, $3.tipo)) { semanticError("Erro de tipo na atribuição composta."); YYABORT; }
+
+		if (tipoId != $3.tipo)
+		{
+			tradConversao = ConversaoCodIntermediario($3.label, $3.tipo, tipoId, labelExp) + "\t";
+		}
+
+		$$.label = $1.label;
+		$$.traducao = $3.traducao + "\t" + tradConversao + nomeReal + " = " + nomeReal + " * " + labelExp + "; // " + $1.label + "\n";
+	}
+	| TK_ID OP_DIV_IGUAL EXPRESSAO
+	{
+		if (!varExiste($1.label)) { semanticError("A variável " + $1.label + " é desconhecida"); YYABORT; }
+		if (!varInicializada($1.label)) { semanticError("Variável não inicializada."); YYABORT; }
+
+		TIPO tipoId = varTipo($1.label);
+		string nomeReal = varNomeReal($1.label);
+		string labelExp = $3.label;
+		string tradConversao = "";
+
+		if (!operadorFuncionaEmTipo('/', tipoId)) { semanticError("O operador '/=' não suporta o tipo " + tipoParaString(tipoId)); YYABORT; }
+		if (!tipoPodeSerAtribuido(tipoId, $3.tipo)) { semanticError("Erro de tipo na atribuição composta."); YYABORT; }
+
+		if (tipoId != $3.tipo)
+		{
+			tradConversao = ConversaoCodIntermediario($3.label, $3.tipo, tipoId, labelExp) + "\t";
+		}
+
+		$$.label = $1.label;
+		$$.traducao = $3.traducao + "\t" + tradConversao + nomeReal + " = " + nomeReal + " / " + labelExp + "; // " + $1.label + "\n";
 	}	
 ;
 

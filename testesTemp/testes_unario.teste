@@ -1,0 +1,16 @@
+int a = 5;
+
+int negativo = -a;  
+
+int c = ++a;        
+int d = a++;        
+
+int e = --negativo; 
+int f = negativo--; 
+
+output a; 
+output negativo; 
+output c; 
+output d; 
+output e; 
+output f;

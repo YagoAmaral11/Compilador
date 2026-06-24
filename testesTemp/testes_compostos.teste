@@ -1,0 +1,19 @@
+int valor = 10;
+output valor; 
+
+valor += 5;
+output valor; 
+
+valor -= 3;
+output valor;
+
+valor *= 2;
+output valor; 
+
+
+valor /= 4;
+output valor; 
+
+int peso = 2;
+valor += peso * 3; 
+output valor; 
