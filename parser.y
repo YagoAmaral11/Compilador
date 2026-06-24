@@ -404,11 +404,11 @@ IF:
 
 		desempilharEscopo();
 
-		desempilharLabel();
+		Label* L = desempilharLabel();
 
 		string labelExp = novaVarTemp(TIPO_BOOL);
 
-		$$.traducao = $1.traducao + "\t" + labelExp + " = !" + $1.label + ";\n" + "\tif (" + labelExp + ")\n\t\tgoto " + $3.label + ";\n" + $2.traducao + $3.traducao;
+		$$.traducao = $1.traducao + "\t" + labelExp + " = !" + $1.label + ";\n" + "\tif (" + labelExp + ")\n\t\tgoto " + $3.label + ";\n" + $2.traducao + $3.traducao + L->labelFim + ":\n";
 
 	}
 ;
