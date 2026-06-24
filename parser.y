@@ -40,7 +40,9 @@ struct Simbolo
 	TIPO tipoDeclarado; // Tipo que foi declarado a variavel.
 
 	// Informações sobre a declaração
-	bool simboloInicializado; // Se esse símbolo já foi inicializado com algum valor; Caso contrário, não pode ser usado		
+	bool simboloInicializado; // Se esse símbolo já foi inicializado com algum valor; Caso contrário, não pode ser usado
+
+	bool éMatriz; // Se esse símbolo é uma matriz ou não; Caso seja, ele terá dimensões e tamanho, caso contrário, não terá
 };
 
 // Usado para definir qual tipo de conversão um tipo pode ter
@@ -103,6 +105,12 @@ struct StringInfo
 	int tamanho;
 };
 
+struct MatrizInfo
+{
+	int qntDimensao; // Quantidade de dimensões da matriz
+	vector<string> dimensoes; // Dimensões da matriz, em formato de string (ex.: "3", "a", etc.)
+};
+
 // Declarações de funções
 int yylex(void);
 void yyerror(string);
@@ -145,6 +153,8 @@ string StringDinamicaTamanho(string labelString);
 string StringAtribuição(string lString, string rString);
 string DeclararVariaveisTemporarias(bool* b, TIPO* tipoErrado);
 string DeclararVariaveisUsuario(bool* b, TIPO* tipoErrado);
+MatrizInfo* adicionarDim(MatrizInfo* m, vector<string> dim);
+MatrizInfo* novaMatriz();
 
 // Variáveis
 int var_temp_qnt; // Contador de variáveis temporárias
@@ -184,6 +194,10 @@ unordered_map<TIPO, string> tabelaFormatting;
 
 // Usado para guardar se uma string é dinâmica ou não e se seu tamanho é conhecido em tempo de compilação
 unordered_map<string, StringInfo*> tabelaStrings;
+
+unordered_map<string, MatrizInfo*> tabelaMatrizes; // Usado para guardar informações sobre matrizes, como suas dimensões e se são dinâmicas ou não
+
+vector<string> dimTemp;
 
 // Macros
 #define tmpVarPrefix "tmp"
@@ -227,6 +241,7 @@ unordered_map<string, StringInfo*> tabelaStrings;
 
 %nonassoc TK_NO_ELSE // Usado para marcar o final de um comando if sem else, para resolver o "dangling else problem"; O TK_NO_ELSE é não associativo, ou seja, ele não pode ser associado a nenhum else; Assim, o else mais próximo de um if sempre será associado a ele, e não a um if mais distante
 %nonassoc TK_ELSE // Para resolver o "dangling else problem"; O TK_ELSE é não associativo, ou seja, ele só pode ser associado ao if mais próximo; Assim, o else mais próximo de um if sempre será associado a ele, e não a um if mais distante
+%nonassoc TK_NO_MATRIZ
 
 %right '=' OP_MAIS_IGUAL OP_MENOS_IGUAL OP_MULT_IGUAL OP_DIV_IGUAL
 
@@ -240,6 +255,7 @@ unordered_map<string, StringInfo*> tabelaStrings;
 %left '+' '-'
 %left '*' '/'
 
+%right '[' ']'
 %left '(' ')'
 %right OP_NOT OP_INC OP_DEC NUM_NEGATIVO
 
@@ -1655,6 +1671,87 @@ DECLARACAO:
 			}
 		}
 	}
+	| TK_TIPO TK_ID DIMENSAO
+	{
+		if (varExisteNoEscopoAtual($2.label))
+		{
+			semanticError("Simbolo ja declarado -> '" + $2.label + "'. Nao e possivel declarar novamente, escolha outro nome.");
+			YYABORT;
+		}
+		else if ($1.tipo == TIPO_STRING)
+		{
+			semanticError("Nao e possivel declarar uma matriz do tipo string.");
+			YYABORT;	
+		}
+		else
+		{
+			$$.label = $2.label;
+
+			Simbolo* s = novaVar($1.tipo, $2.label);
+			MatrizInfo* m = novaMatriz();
+			m = adicionarDim(m, dimTemp);
+			s->éMatriz = true;
+
+			tabelaMatrizes[s->labelReal] = m;
+
+			tabelaSimbolos.back()[$2.label] = s;
+			ordemDeclaracaoSimbolos.push(s);
+
+			dimTemp.clear();
+
+			string labelDim;
+			string labelTam = novaVarTemp(TIPO_INT);
+			string traducaoDimensoes = "";
+
+			for(int i = 0; i < m->qntDimensao; i++)
+			{
+				labelDim = novaVarTemp(TIPO_INT);
+
+				if (i == 0)
+				{
+					traducaoDimensoes += "\t" + labelDim + " = " + m->dimensoes[i] + ";\n";
+				}
+				else
+				{
+					traducaoDimensoes += "\t" + labelDim + " = " + labelDim + " * " + m->dimensoes[i] + ";\n";
+				}
+			}
+			
+
+			$$.traducao = $3.traducao + traducaoDimensoes + "\t" + labelTam + " = " + labelDim + " * " + "sizeof(" + tipoParaString($1.tipo) + ")" + ";\n" + "\t" + varNomeReal($2.label) + " = malloc(" + labelTam + ");\n";
+		}
+	}
+;
+
+DIMENSAO:
+	'[' EXPRESSAO ']'
+	{
+		if ($2.tipo != TIPO_INT)
+		{
+			semanticError("Dimensao de matriz invalida -> o tamanho da dimensao deve ser do tipo inteiro, mas foi fornecido um valor do tipo " + tipoParaString($2.tipo));
+			YYABORT;
+		}
+
+		string labelDim = novaVarTemp(TIPO_INT);
+
+		$$.traducao = $2.traducao + "\t" + labelDim + " = " + $2.label + ";\n";
+
+		dimTemp.push_back(labelDim);
+	}
+	| DIMENSAO '[' EXPRESSAO ']'
+	{
+		if ($3.tipo != TIPO_INT)
+		{
+			semanticError("Dimensao de matriz invalida -> o tamanho da dimensao deve ser do tipo inteiro, mas foi fornecido um valor do tipo " + tipoParaString($3.tipo));
+			YYABORT;
+		}
+
+		string labelDim = novaVarTemp(TIPO_INT);
+
+		$$.traducao = $1.traducao + $3.traducao;
+
+		dimTemp.push_back($3.label);
+	}
 ;
 
 %%
@@ -1684,6 +1781,7 @@ Simbolo* novaVar(TIPO tipo, string labelUsuario)
 	s->labelUsuario = labelUsuario;
 	s->tipoDeclarado = tipo;
 	s->simboloInicializado = false;
+	s->éMatriz = false;
 
 	return s;
 }
@@ -1696,6 +1794,20 @@ StringInfo* novaString()
 	s->transicionou = false;
 	s->tamanho = 0;
 	return s;
+}
+
+MatrizInfo* novaMatriz()
+{
+	MatrizInfo* m = new MatrizInfo;
+	m->qntDimensao = 0;
+	return m;
+}
+
+MatrizInfo* adicionarDim(MatrizInfo* m, vector<string> dim)
+{
+	m->dimensoes = dim;
+	m->qntDimensao = dim.size();
+	return m;
 }
 
 void empilharEscopo()
@@ -2443,8 +2555,11 @@ string DeclararVariaveisUsuario(bool* b, TIPO* tipoErrado)
 	{			 
 		Simbolo* s = ordemDeclaracaoSimbolos.front();
 		TIPO tipoVar = s->tipoDeclarado;
-		
-		if (tipoDiretoCodIntermediario(tipoVar))
+		if(s->éMatriz)
+		{
+			codigo_gerado += "\t" + tipoCodIntermediario(s->tipoDeclarado) + " *" + s->labelReal + ";" + " // " + tipoParaString(s->tipoDeclarado) + " " + s->labelUsuario + "\n";
+		}
+		else if (tipoDiretoCodIntermediario(tipoVar))
 		{
 			codigo_gerado += "\t" + tipoCodIntermediario(s->tipoDeclarado) + " " + s->labelReal + ";" + " // " + tipoParaString(s->tipoDeclarado) + " " + s->labelUsuario + "\n";
 		}			

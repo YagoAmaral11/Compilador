@@ -63,6 +63,7 @@ NOT (!|not)
 [+/*-]		{ coluna++; return *yytext; }
 [()]        { coluna++; return *yytext; }
 [{}]        { coluna++; return *yytext; }
+[\[\]]      { coluna++; return *yytext; }
 [;]         { coluna++; return *yytext; }
 [:]         { coluna++; return *yytext; }
 

@@ -1,6 +1,5 @@
-var x = "teste";
-x++;
-++x;
---x;
-x--;
-output x;
+int a;
+
+int m1[2];
+int m2[2][3];
+int m3[1 + 1];
