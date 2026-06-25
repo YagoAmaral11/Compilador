@@ -1,0 +1,8 @@
+void teste(int a, float b)
+{
+    output a + b;
+}
+
+int a = 50;
+
+teste(a, 20.0);
