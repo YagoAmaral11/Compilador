@@ -1,6 +1,1 @@
-string teste(string a)
-{
-    return a + " adicionado";
-}
-
-output teste("Oi");
+string m1[9][10][11];
