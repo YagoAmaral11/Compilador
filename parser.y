@@ -2375,6 +2375,9 @@ string tipoCodIntermediario(TIPO tipo)
 		case TIPO_VAZIO:
 			return "void";
 			break;
+		case TIPO_STRING:
+			return "char*";
+			break;
 	}
 	return "";
 }

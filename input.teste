@@ -1,1 +1,6 @@
-string m1[9][10][11];
+void Ola(string a)
+{
+    output "Olá, " + a;
+}
+
+Ola(input(string));
